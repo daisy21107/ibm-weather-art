@@ -1,0 +1,55 @@
+<MainUI>:
+    orientation: 'vertical'
+    padding: 20
+    spacing: 15
+
+    canvas.before:
+        Color:
+            rgba: 0.1, 0.1, 0.1, 1  # Dark background for contrast
+        Rectangle:
+            pos: self.pos
+            size: self.size
+
+    Label:
+        id: weather_label
+        text: "Weather: --"
+        font_size: 32
+        color: 1, 1, 1, 1
+        size_hint_y: 0.2
+
+    Label:
+        id: music_label
+        text: "Now Playing: --"
+        font_size: 28
+        color: 1, 1, 1, 1
+        size_hint_y: 0.2
+
+    Label:
+        id: chatbot_output
+        text: "AI Says: --"
+        font_size: 24
+        color: 1, 1, 1, 1
+        size_hint_y: 0.3
+        text_size: self.width, None
+        halign: 'center'
+        valign: 'middle'
+
+    BoxLayout:
+        orientation: 'horizontal'
+        spacing: 10
+        size_hint_y: 0.3
+
+        Button:
+            text: "Get Weather"
+            font_size: 20
+            on_release: app.get_weather()
+
+        Button:
+            text: "Play Music"
+            font_size: 20
+            on_release: app.get_music()
+
+        Button:
+            text: "Ask AI"
+            font_size: 20
+            on_release: app.ask_chatbot()
