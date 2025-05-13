@@ -5,35 +5,106 @@
 
     canvas.before:
         Color:
-            rgba: 0.1, 0.1, 0.1, 1  # Dark background for contrast
+            rgba: 0.1, 0.1, 0.1, 1
         Rectangle:
             pos: self.pos
             size: self.size
 
-    Label:
-        id: weather_label
-        text: "Weather: --"
-        font_size: 32
-        color: 1, 1, 1, 1
+    # --- Weather Row ---
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'center'
         size_hint_y: 0.2
 
-    Label:
-        id: music_label
-        text: "Now Playing: --"
-        font_size: 28
-        color: 1, 1, 1, 1
+        # FloatLayout lets us position emoji and text separately 
+        FloatLayout: 
+            orientation: 'horizontal'
+            spacing: 10
+            size_hint: 1, 1 
+
+            Label:
+                id: weather_icon
+                text: "☀️"
+                font_size: 40
+                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
+                color: 1, 1, 1, 1
+                size_hint: None, None
+                size: self.texture_size
+                text_size: self.size
+                pos_hint: {'x': 0.2, 'center_y': 0.5}       # 10% from left
+                
+
+            Label:
+                id: weather_label
+                text: "Weather: --"
+                font_size: 32
+                color: 1, 1, 1, 1
+                size: self.texture_size
+                text_size: None, None
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+    # --- Music Row ---
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'center'
         size_hint_y: 0.2
 
-    Label:
-        id: chatbot_output
-        text: "AI Says: --"
-        font_size: 24
-        color: 1, 1, 1, 1
+        FloatLayout:
+            orientation: 'horizontal'
+            spacing: 10
+            size_hint: 1, 1
+
+            Label:
+                id: music_icon
+                text: "🎵"
+                font_size: 40
+                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
+                color: 1, 1, 1, 1
+                size_hint: None, None
+                size: self.texture_size
+                text_size: self.size
+                pos_hint: {'x': 0.2, 'center_y': 0.5}
+
+            Label:
+                id: music_label
+                text: "Now Playing: --"
+                font_size: 32
+                color: 1, 1, 1, 1
+                size: self.texture_size
+                text_size: None, None
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+    # --- AI Row ---
+    AnchorLayout:
+        anchor_x: 'center'
+        anchor_y: 'center'
         size_hint_y: 0.3
-        text_size: self.width, None
-        halign: 'center'
-        valign: 'middle'
 
+        FloatLayout:
+            orientation: 'horizontal'
+            spacing: 10
+            size_hint: 1, 1
+
+            Label:
+                id: chatbot_icon
+                text: "🤖"
+                font_size: 40
+                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
+                color: 1, 1, 1, 1
+                size_hint: None, None
+                size: self.texture_size
+                text_size: self.size
+                pos_hint: {'x': 0.2, 'center_y': 0.5}
+
+            Label:
+                id: chatbot_output
+                text: "AI Says: --"
+                font_size: 32
+                color: 1, 1, 1, 1
+                text_size: None, None
+                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
+
+    # --- Buttons ---
     BoxLayout:
         orientation: 'horizontal'
         spacing: 10
@@ -41,15 +112,15 @@
 
         Button:
             text: "Get Weather"
-            font_size: 20
+            font_size: 40
             on_release: app.get_weather()
 
         Button:
             text: "Play Music"
-            font_size: 20
+            font_size: 40
             on_release: app.get_music()
 
         Button:
             text: "Ask AI"
-            font_size: 20
+            font_size: 40
             on_release: app.ask_chatbot()
