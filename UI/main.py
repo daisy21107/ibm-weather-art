@@ -16,16 +16,17 @@ class AIWeatherApp(App):
         return MainUI()
 
     def get_weather(self):
-        # Simulated weather output
-        weather = "☀️ Sunny, 22°C"
+        weather = "Sunny, 22°C"
+        self.root.ids.weather_icon.text = "☀️"
         self.root.ids.weather_label.text = f"Weather: {weather}"
 
     def get_music(self):
-        self.root.ids.music_label.text = "🎵 Now Playing: Jazz FM"
+        self.root.ids.music_icon.text = "🎵"
+        self.root.ids.music_label.text = "Now Playing: Jazz FM"
 
     def ask_chatbot(self):
-        response = "🤖 AI: You should take an umbrella today!"
-        self.root.ids.chatbot_output.text = response
+        self.root.ids.chatbot_icon.text = "🤖"
+        self.root.ids.chatbot_output.text = "AI: You should take an umbrella today!"
 
 if __name__ == "__main__":
     AIWeatherApp().run()
