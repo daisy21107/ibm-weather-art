@@ -16,9 +16,44 @@ class AIWeatherApp(App):
         return MainUI()
 
     def get_weather(self):
-        weather = "Sunny, 22°C"
-        self.root.ids.weather_icon.text = "☀️"
-        self.root.ids.weather_label.text = f"Weather: {weather}"
+        try:
+            API_KEY = ''
+            CITY = 'London'
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={API_KEY}&units=metric&lang=en"
+            
+            response = requests.get(url)
+            data = response.json()
+
+            if response.status_code != 200:
+                print(f"API Error: {data['message']}")
+                self.root.ids.weather_icon.text = "❌"
+                self.root.ids.weather_label.text = f"Error: {data['message']}"
+                return
+
+            description = data['weather'][0]['main']
+            temp = data['main']['temp']
+
+            emoji_map = {
+                "Clear": "☀️",
+                "Clouds": "☁️",
+                "Rain": "🌧️",
+                "Snow": "❄️",
+                "Thunderstorm": "⚡",
+                "Drizzle": "🌦️",
+                "Mist": "🌫️",
+                "Haze": "🌫️",
+                "Fog": "🌁"
+            }
+
+            emoji = emoji_map.get(description, "🌈")
+            self.root.ids.weather_icon.text = emoji
+            self.root.ids.weather_label.text = f"{description}, {temp:.1f}°C"
+
+        except Exception as e:
+            print(f"Exception occurred: {e}")
+            self.root.ids.weather_icon.text = "❌"
+            self.root.ids.weather_label.text = "API error"
+
 
     def get_music(self):
         self.root.ids.music_icon.text = "🎵"
