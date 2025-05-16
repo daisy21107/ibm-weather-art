@@ -1,126 +1,96 @@
+#:import dp kivy.metrics.dp
+
 <MainUI>:
-    orientation: 'vertical'
-    padding: 20
-    spacing: 15
+    orientation: "vertical"
+    padding: dp(15)
+    spacing: dp(12)
 
-    canvas.before:
-        Color:
-            rgba: 0.1, 0.1, 0.1, 1
-        Rectangle:
-            pos: self.pos
-            size: self.size
+    GridLayout:
+        cols: 2
+        size_hint_y: None
+        height: self.minimum_height
+        row_force_default: True
+        row_default_height: dp(90)
+        spacing: dp(20)
 
-    # --- Weather Row ---
-    AnchorLayout:
-        anchor_x: 'center'
-        anchor_y: 'center'
-        size_hint_y: 0.2
-
-        # FloatLayout can position emoji and text separately 
-        FloatLayout: 
-            orientation: 'horizontal'
-            spacing: 10
-            size_hint: 1, 1 
-
+        # ───────── 1 · WEATHER ─────────
+        BoxLayout:
+            spacing: dp(8)
             Label:
                 id: weather_icon
-                text: "☀️"
-                font_size: 40
-                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
-                color: 1, 1, 1, 1
-                size_hint: None, None
-                size: self.texture_size
-                text_size: self.size
-                pos_hint: {'x': 0.2, 'center_y': 0.5}       # 20% from left
-                
-
+                font_name: "Emoji"
+                text: ""
+                font_size: "40sp"
+                size_hint_x: None
+                width: self.texture_size[0]
             Label:
                 id: weather_label
-                text: "Weather: --"
-                font_size: 32
-                color: 1, 1, 1, 1
-                size: self.texture_size
-                text_size: None, None
-                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-
-    # --- Music Row ---
-    AnchorLayout:
-        anchor_x: 'center'
-        anchor_y: 'center'
-        size_hint_y: 0.2
-
-        FloatLayout:
-            orientation: 'horizontal'
-            spacing: 10
-            size_hint: 1, 1
-
-            Label:
-                id: music_icon
-                text: "🎵"
-                font_size: 40
-                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
-                color: 1, 1, 1, 1
-                size_hint: None, None
-                size: self.texture_size
-                text_size: self.size
-                pos_hint: {'x': 0.2, 'center_y': 0.5}
-
-            Label:
-                id: music_label
-                text: "Now Playing: --"
-                font_size: 32
-                color: 1, 1, 1, 1
-                size: self.texture_size
-                text_size: None, None
-                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-
-    # --- AI Row ---
-    AnchorLayout:
-        anchor_x: 'center'
-        anchor_y: 'center'
-        size_hint_y: 0.3
-
-        FloatLayout:
-            orientation: 'horizontal'
-            spacing: 10
-            size_hint: 1, 1
-
-            Label:
-                id: chatbot_icon
-                text: "🤖"
-                font_size: 40
-                font_name: "/System/Library/Fonts/Apple Color Emoji.ttc"
-                color: 1, 1, 1, 1
-                size_hint: None, None
-                size: self.texture_size
-                text_size: self.size
-                pos_hint: {'x': 0.2, 'center_y': 0.5}
-
-            Label:
-                id: chatbot_output
-                text: "AI Says: --"
-                font_size: 32
-                color: 1, 1, 1, 1
-                text_size: None, None
-                pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-
-    # --- Buttons ---
-    BoxLayout:
-        orientation: 'horizontal'
-        spacing: 10
-        size_hint_y: 0.3
-
+                text: "—"
+                markup: True
+                halign: "left"
+                valign: "middle"
+                text_size: self.width, None
         Button:
-            text: "Get Weather"
-            font_size: 40
+            text: "Refresh weather"
+            size_hint_x: None
+            width: dp(180)
             on_release: app.get_weather()
 
+        # ───────── 2 · NEWS ─────────
+        Label:
+            id: news_label
+            text: "—"
+            markup: True
+            halign: "left"
+            valign: "middle"
+            text_size: self.width, None
+            on_ref_press: app.open_article(args[1])
         Button:
-            text: "Play Music"
-            font_size: 40
+            text: "Refresh news"
+            size_hint_x: None
+            width: dp(180)
+            on_release: app.refresh_news()
+
+        # ───────── 3 · MUSIC ─────────
+        BoxLayout:
+            spacing: dp(8)
+            Label:
+                id: music_icon
+                font_name: "Emoji"
+                text: ""
+                font_size: "34sp"
+                size_hint_x: None
+                width: self.texture_size[0]
+            Label:
+                id: music_label
+                text: "—"
+                halign: "left"
+                valign: "middle"
+                text_size: self.width, None
+        Button:
+            text: "music"
+            size_hint_x: None
+            width: dp(180)
             on_release: app.get_music()
 
+        # ───────── 4 · ASK AI ─────────
+        BoxLayout:
+            spacing: dp(8)
+            Label:
+                id: chatbot_icon
+                font_name: "Emoji"
+                text: ""
+                font_size: "34sp"
+                size_hint_x: None
+                width: self.texture_size[0]
+            Label:
+                id: chatbot_output
+                text: "—"
+                halign: "left"
+                valign: "middle"
+                text_size: self.width, None
         Button:
             text: "Ask AI"
-            font_size: 40
+            size_hint_x: None
+            width: dp(180)
             on_release: app.ask_chatbot()
