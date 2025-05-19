@@ -1,5 +1,8 @@
-import yt_dlp
+import sys
+import os
+
 import vlc
+import yt_dlp
 import time
 import threading
 import platform
