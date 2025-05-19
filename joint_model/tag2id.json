@@ -1,0 +1,11 @@
+{
+  "B-artist": 0,
+  "B-location": 1,
+  "B-song": 2,
+  "B-topic": 3,
+  "I-artist": 4,
+  "I-location": 5,
+  "I-song": 6,
+  "I-topic": 7,
+  "O": 8
+}

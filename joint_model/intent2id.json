@@ -1,0 +1,5 @@
+{
+  "get_news": 0,
+  "get_weather": 1,
+  "play_music": 2
+}
