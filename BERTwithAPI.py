@@ -9,48 +9,7 @@ WEATHER_API_KEY = ""    # Replace with your weather API key
 
 news_api = GuardianNewsAPI(GUARDIAN_API_KEY)
 
-# Extract topic slot
-def extract_topic(slots):
-    topic = []
-    collecting = False
-    for word, tag in slots:
-        if tag == "B-topic":
-            if collecting:
-                break
-            topic = [word]
-            collecting = True
-        elif tag == "I-topic" and collecting:
-            topic.append(word)
-        else:
-            if collecting:
-                break
-    return " ".join(topic) if topic else None
-
-# Extract artist and song
-def extract_music_query(slots):
-    artist_words = []
-    song_words = []
-    curr_tag = None
-    for word, tag in slots:
-        if tag == "B-artist":
-            artist_words = [word]
-            curr_tag = "artist"
-        elif tag == "I-artist" and curr_tag == "artist":
-            artist_words.append(word)
-        elif tag == "B-song":
-            song_words = [word]
-            curr_tag = "song"
-        elif tag == "I-song" and curr_tag == "song":
-            song_words.append(word)
-        else:
-            curr_tag = None
-    artist = " ".join(artist_words) if artist_words else ""
-    song = " ".join(song_words) if song_words else ""
-    if artist and song:
-        return f"{song} by {artist}"
-    return song or artist or None
-
-#Main interaction loop
+# Main interaction loop
 if __name__ == "__main__":
     while True:
         try:
@@ -62,25 +21,35 @@ if __name__ == "__main__":
             if intent is None:
                 continue
 
-            print(f"\n🎯 Predicted intent: {intent}")
+            print(f"\n🎯 Predicted inte"
+                  f"nt: {intent}")
             print("📌 Slot tagging:")
             for word, tag in slots:
                 print(f"  {word:<12} -> {tag}")
 
+            # Extract all labeled keywords
+            labeled_words = [word for word, tag in slots if tag != 'O']
+            if labeled_words:
+                print(f"\n📌 Labeled keywords: {labeled_words}")
+                query = " ".join(labeled_words)
+            else:
+                query = None
+
             if intent == "get_news":
-                topic = extract_topic(slots)
-                if topic:
-                    print(f"\n🔎 Fetching news about: {topic}\n")
-                    news_api.fetch_news(query=topic, result_num=5)
+                if query:
+                    print(f"\n🔎 Fetching news about: {query}\n")
+                    news_api.fetch_news(query=query, result_num=5)
                 else:
                     print("\n⚠️ No topic found in slots. Skipping news API.")
 
             elif intent == "get_weather":
-                print("\n🌤 Fetching weather information...\n")
+                if query:
+                    print(f"\n🌤 Fetching weather for: {query}\n")
+                else:
+                    print("\n🌤 Fetching general weather information...\n")
                 get_weather()
 
             elif intent == "play_music":
-                query = extract_music_query(slots)
                 if query:
                     print(f"\n🎵 Searching YouTube for music: {query}")
                     webpage_url, title = search_youtube(query)
@@ -91,7 +60,7 @@ if __name__ == "__main__":
                         player.play()
 
                         print("🎛️ Controls: [space] pause/resume [←/→] seek [Enter] exit playback")
-                        while True:
+                        while player.play():
                             key = get_single_key()
                             if key == "space":
                                 player.pause_resume()
@@ -102,9 +71,7 @@ if __name__ == "__main__":
                             elif key == "enter":
                                 player.stop()
                                 break
-
-                        # Automatically exit to next prompt
-                        continue
+                        continue  # Automatically return to next input
                     else:
                         print("❌ No YouTube video found.")
                 else:
