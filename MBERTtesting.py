@@ -5,24 +5,40 @@ from transformers import AutoTokenizer, AutoModel
 from torch import nn
 import re
 
-# define model
+# ===== 联合模型定义 =====
+# class JointBert(nn.Module):
+#     def __init__(self, model_name, num_tags, num_intents):
+#         super().__init__()
+#         self.bert = AutoModel.from_pretrained(model_name)
+#         self.dropout = nn.Dropout(0.1)
+#         self.tag_classifier = nn.Linear(self.bert.config.hidden_size, num_tags)
+#         self.intent_classifier = nn.Linear(self.bert.config.hidden_size, num_intents)
+#
+#     def forward(self, input_ids=None, attention_mask=None):
+#         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+#         seq_output = self.dropout(outputs.last_hidden_state)
+#         pooled_output = self.dropout(outputs.last_hidden_state[:, 0])
+#         tag_logits = self.tag_classifier(seq_output)
+#         intent_logits = self.intent_classifier(pooled_output)
+#         return tag_logits, intent_logits
+
 class JointBert(nn.Module):
     def __init__(self, model_name, num_tags, num_intents):
         super().__init__()
         self.bert = AutoModel.from_pretrained(model_name)
         self.dropout = nn.Dropout(0.1)
-        self.tag_classifier = nn.Linear(self.bert.config.hidden_size, num_tags)
-        self.intent_classifier = nn.Linear(self.bert.config.hidden_size, num_intents)
+        self.tag_head = nn.Linear(self.bert.config.hidden_size, num_tags)     # ✅ 改成 tag_head
+        self.intent_head = nn.Linear(self.bert.config.hidden_size, num_intents)  # ✅ 改成 intent_head
 
     def forward(self, input_ids=None, attention_mask=None):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         seq_output = self.dropout(outputs.last_hidden_state)
         pooled_output = self.dropout(outputs.last_hidden_state[:, 0])
-        tag_logits = self.tag_classifier(seq_output)
-        intent_logits = self.intent_classifier(pooled_output)
+        tag_logits = self.tag_head(seq_output)        # ✅ tag_head
+        intent_logits = self.intent_head(pooled_output)  # ✅ intent_head
         return tag_logits, intent_logits
 
-# align word with label
+# ===== 标签对齐 =====
 def align_word_level_tags(word_ids, tag_ids, id2tag, allowed_tags):
     word_to_tags = {}
     for idx, word_idx in enumerate(word_ids):
@@ -40,21 +56,21 @@ def align_word_level_tags(word_ids, tag_ids, id2tag, allowed_tags):
         pred_tags.append(tag)
     return pred_tags
 
-# ===== wash =====
+# ===== 文本清洗 =====
 def normalize_text(text):
     return re.sub(r"[^a-z0-9\s'\-]", '', text.lower())
 
-# ===== function =====
+# ===== 健壮推理函数 =====
 def infer(text, model_dir="joint_model", model_name="google/mobilebert-uncased"):
     try:
         if not os.path.exists(model_dir):
-            raise FileNotFoundError(f"❌ model cat '{model_dir}' cannot be found。")
+            raise FileNotFoundError(f"❌ 模型目录 '{model_dir}' 不存在。")
 
-        # load file
+        # 加载映射文件
         def load_json(file):
             path = os.path.join(model_dir, file)
             if not os.path.exists(path):
-                raise FileNotFoundError(f"❌ cannot find {file}，please make sure its saved。")
+                raise FileNotFoundError(f"❌ 缺少文件 {file}，请确认已训练并保存。")
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
 
@@ -70,15 +86,15 @@ def infer(text, model_dir="joint_model", model_name="google/mobilebert-uncased")
         model = JointBert(model_name, num_tags=len(tag2id), num_intents=len(intent2id))
         model_path = os.path.join(model_dir, "pytorch_model.bin")
         if not os.path.exists(model_path):
-            raise FileNotFoundError("❌ cannot find pytorch_model.bin")
+            raise FileNotFoundError("❌ 找不到模型权重文件 pytorch_model.bin")
         model.load_state_dict(torch.load(model_path, map_location="cpu"))
         model.eval()
 
-        # text processing
+        # 文本处理
         text = normalize_text(text)
         words = text.strip().split()
         if not words:
-            print("⚠️ Enter Empty or invalid word。")
+            print("⚠️ 输入为空或无有效词语。")
             return None, []
 
         inputs = tokenizer(words, is_split_into_words=True, return_tensors="pt", padding=True, truncation=True, max_length=128)
@@ -99,10 +115,10 @@ def infer(text, model_dir="joint_model", model_name="google/mobilebert-uncased")
         return intent, list(zip(words, pred_tags))
 
     except Exception as e:
-        print(f"🚫 Fail：{e}")
+        print(f"🚫 推理失败：{e}")
         return None, []
 
-# Testing
+# ===== 测试入口 =====
 if __name__ == "__main__":
     while True:
         try:

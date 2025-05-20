@@ -1,11 +1,16 @@
 {
-  "B-artist": 0,
-  "B-location": 1,
-  "B-song": 2,
-  "B-topic": 3,
-  "I-artist": 4,
-  "I-location": 5,
-  "I-song": 6,
-  "I-topic": 7,
-  "O": 8
+  "B-Topic": 0,
+  "B-artist": 1,
+  "B-location": 2,
+  "B-media": 3,
+  "B-song": 4,
+  "B-sports": 5,
+  "B-topic": 6,
+  "I-Topic": 7,
+  "I-artist": 8,
+  "I-location": 9,
+  "I-media": 10,
+  "I-song": 11,
+  "I-topic": 12,
+  "O": 13
 }
