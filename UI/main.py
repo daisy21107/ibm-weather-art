@@ -10,6 +10,8 @@ import os
 import platform
 import threading
 import webbrowser
+import vlc
+import yt_dlp
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -30,6 +32,12 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.animation import Animation
+from kivy.uix.popup import Popup
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
+from kivy.metrics import dp
+from kivy.uix.button import Button
+
 
 # ───────── load .env (both keys) ─────────
 load_dotenv(dotenv_path=Path(__file__).with_name(".env"))
@@ -91,6 +99,56 @@ class GuardianNewsAPI:
                          "preview": preview,
                          "date": pub_date})
         return news
+    
+# ----------- Stream Resolver -----------
+
+def format_duration(seconds):
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{int(minutes)}:{int(secs):02d}"
+
+def resolve_stream_url(webpage_url):
+    ydl_opts = {
+        'quiet': True,
+        'format': 'bestaudio[ext=m4a]/bestaudio/best',
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(webpage_url, download=False)
+        return info['url']
+    
+class MusicPlayer:
+    def __init__(self):
+        self.instance = vlc.Instance()
+        self.player = self.instance.media_player_new()
+        self.media = None
+        self.progress_thread = None
+        self._stop_progress = False
+        self.is_paused = False
+
+    def load_and_play(self, stream_url):
+        self.media = self.instance.media_new(
+            stream_url,
+            ":http-user-agent=Mozilla/5.0",
+            ":http-referrer=https://www.youtube.com/"
+        )
+        self.player.set_media(self.media)
+        self.player.play()
+        print("🎵 Media loaded.")
+        
+    def toggle_pause(self):
+        if self.player.is_playing():
+            self.player.pause()
+            self.is_paused = True
+            print("⏸️ Paused.")
+        elif self.is_paused:
+            self.player.play()
+            self.is_paused = False
+            print("▶️ Resumed.")
+            
+    def stop(self):
+        self.player.stop()
+        self._stop_progress = True
+        print("⏹️ Stopped.")
 
 # ───────── UI root helper ─────────
 class MainUI(BoxLayout):
@@ -198,11 +256,86 @@ class AIWeatherApp(App):
     def open_article(self, url, *_):
         webbrowser.open(url)
 
-    # MUSIC & AI ----------------------------------------------------------
-    def get_music(self, *_):
-        self.root.ids.music_icon.text  = "🎵"
-        self.root.ids.music_label.text = "Jazz FM"
+    # MUSIC ----------------------------------------------------------
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.music_player = MusicPlayer()
+    
+    def search_youtube(self, query, max_results=5):
+        ydl_opts = {
+            'quiet': True,
+            'extract_flat': 'in_playlist',
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'default_search': f'ytsearch{max_results}',
+            'noplaylist': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+        entries = info.get('entries', []) or []
 
+        results = []
+        for entry in entries:
+            # some entries use 'url', others 'webpage_url'
+            url   = entry.get('url') or entry.get('webpage_url')
+            title = entry.get('title', 'Unknown')
+            if url:
+                results.append((url, title))
+        return results
+
+    def _update_music_label(self, icon: str, title: str):
+        self.root.ids.music_icon.text = icon
+        self.root.ids.music_label.text = f"Now Playing: {title}"
+
+    def get_music(self, *args):
+        query = self.root.ids.music_query.text.strip()
+        if not query:
+            return
+
+        results = self.search_youtube(query)
+        if not results:
+            # Optionally: show a toast or popup “No results found”
+            return
+
+        # 1) make a vertical GridLayout to hold Buttons
+        layout = GridLayout(cols=1,
+                            spacing=dp(5),
+                            padding=dp(10),
+                            size_hint_y=None)
+        layout.bind(minimum_height=layout.setter('height'))
+
+        # 2) wrap it in a ScrollView
+        scroll = ScrollView(size_hint=(1, 1))
+        scroll.add_widget(layout)
+
+        # 3) create the Popup
+        popup = Popup(title="Select a track",
+                      content=scroll,
+                      size_hint=(0.8, None),
+                      height=dp(300))
+
+        # 4) for each result, add a Button that captures url & title
+        for url, title in results:
+            btn = Button(text=title,
+                         size_hint_y=None,
+                         height=dp(40))
+            # capture url/title/popup into the handler
+            btn.bind(on_release=lambda inst, u=url, t=title: self._on_pick(u, t, popup))
+            layout.add_widget(btn)
+
+        popup.open()
+
+
+    def _on_pick(self, url, title, popup):
+        popup.dismiss()
+        try:
+            stream = resolve_stream_url(url)
+        except Exception as e:
+            print(f"Stream error: {e}")
+            return
+        self.music_player.load_and_play(stream)
+        Clock.schedule_once(lambda dt: self._update_music_label("🎵", title))
+
+    # CHATBOT ----------------------------------------------------------
     def ask_chatbot(self, *_):
         self.root.ids.chatbot_icon.text   = "🤖"
         self.root.ids.chatbot_output.text = "Don’t forget your umbrella!"
