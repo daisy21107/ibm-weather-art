@@ -10,8 +10,8 @@
         size_hint_y: None
         height: self.minimum_height
         row_force_default: True
-        row_default_height: dp(90)
-        spacing: dp(20)
+        row_default_height: dp(90)   # same height for every row
+        spacing: dp(20)              # gap between left & right columns
 
         # ───────── 1 · WEATHER ─────────
         BoxLayout:
@@ -32,8 +32,8 @@
                 text_size: self.width, None
         Button:
             text: "Refresh weather"
-            size_hint_x: None
-            width: dp(180)
+            size_hint: None, None
+            size: dp(180), dp(50)
             on_release: app.get_weather()
 
         # ───────── 2 · NEWS ─────────
@@ -47,37 +47,43 @@
             on_ref_press: app.open_article(args[1])
         Button:
             text: "Refresh news"
-            size_hint_x: None
-            width: dp(180)
+            size_hint: None, None
+            size: dp(180), dp(50)
             on_release: app.refresh_news()
 
         # ───────── 3 · MUSIC ─────────
         BoxLayout:
             spacing: dp(8)
+
+            # search field (takes the whole width)
+            TextInput:
+                id: music_query
+                hint_text: "Search YouTube…"
+                size_hint_y: None
+                height: dp(50)
+                size_hint_x: 1
+
+            # invisible placeholders so main.py can still update them
             Label:
                 id: music_icon
                 font_name: "Emoji"
                 text: ""
-                font_size: "34sp"
                 size_hint_x: None
-                width: self.texture_size[0]
+                width: 0
+                opacity: 0
+
             Label:
                 id: music_label
-                text: "—"
-                halign: "left"
-                valign: "middle"
-                text_size: self.width, None
-        BoxLayout:
-            spacing: dp(8)
-            TextInput:
-                id: music_query
-                hint_text: "Search YouTube…"
-                size_hint_x: 1
-            Button:
-                text: "Play"
+                text: ""
                 size_hint_x: None
-                width: dp(100)
-                on_release: app.get_music()
+                width: 0
+                opacity: 0
+
+        Button:
+            text: "Music"
+            size_hint: None, None
+            size: dp(180), dp(50)
+            on_release: app.get_music()
 
 
         # ───────── 4 · ASK AI ─────────
@@ -98,6 +104,6 @@
                 text_size: self.width, None
         Button:
             text: "Ask AI"
-            size_hint_x: None
-            width: dp(180)
+            size_hint: None, None
+            size: dp(180), dp(50)
             on_release: app.ask_chatbot()
