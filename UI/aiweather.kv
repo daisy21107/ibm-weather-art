@@ -67,11 +67,18 @@
                 halign: "left"
                 valign: "middle"
                 text_size: self.width, None
-        Button:
-            text: "music"
-            size_hint_x: None
-            width: dp(180)
-            on_release: app.get_music()
+        BoxLayout:
+            spacing: dp(8)
+            TextInput:
+                id: music_query
+                hint_text: "Search YouTube…"
+                size_hint_x: 1
+            Button:
+                text: "Play"
+                size_hint_x: None
+                width: dp(100)
+                on_release: app.get_music()
+
 
         # ───────── 4 · ASK AI ─────────
         BoxLayout:
