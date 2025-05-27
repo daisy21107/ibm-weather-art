@@ -1,47 +1,82 @@
-"""
-AI Weather / News UI  ·  4-row layout
-──────────────────────────────────────────────────────
-Wide-Unicode font support:
-    • We register a large-coverage TTF/OTF
-      (Noto Sans CJK, DejaVu Sans, Microsoft YaHei, …)
-      **using the name “Roboto”** – the same logical face every Kivy widget
-      falls back to by default.  As a result, Chinese, Japanese, Arabic,
-      Cyrillic… now render everywhere instead of little squares.
-"""
+# AIWeather – UI (weather • Guardian news • BERT NLU • YouTube music)
 
-# ───────── std-lib ─────────
-import os, platform, threading, textwrap, webbrowser
-from collections import deque
+"""
+AIWeather – UI (weather • Guardian news • BERT NLU • YouTube music)
+
+"""
+# ───────── standard lib ─────────
+import os, platform, webbrowser, textwrap, csv, json, html, re, logging
+from logging.handlers import RotatingFileHandler
+from collections import defaultdict, deque
 from datetime import datetime
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
-# ───────── 3rd-party ───────
-import requests, vlc, yt_dlp
+# ───────── third-party ──────────
+import requests
 from requests.exceptions import RequestException
 from dotenv import load_dotenv
+import yt_dlp
 
-# ───────── Kivy setup ──────
+try:
+    import vlc
+except ModuleNotFoundError:
+    vlc = None
+
+# ───────── Kivy setup ───────────
 from kivy.config import Config
-Config.set("graphics", "width", "800")
+Config.set("graphics", "width",  "800")
 Config.set("graphics", "height", "480")
 
+from kivy.resources import resource_add_path
+from kivy.core.text import LabelBase
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
-from kivy.uix.modalview import ModalView
-from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-from kivy.animation import Animation
-from kivy.core.text import LabelBase
+from kivy.uix.popup import Popup
+from kivy.uix.button import Button
 from kivy.metrics import dp
-from kivy import resources
+from kivy.animation import Animation
 
-# ───────── load .env ───────
+# your Joint-BERT wrapper
+from BERT import infer as nlu_infer
+
+# ───────── env & thread pool ────
 load_dotenv(Path(__file__).with_name(".env"))
+EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
-# ───────── register fonts ─────────────────────────────────────────────
+# ───────── logging & CSV ────────
+log_dir = Path.home() / "aiweather"; log_dir.mkdir(exist_ok=True)
+logger = logging.getLogger("nlu"); logger.setLevel(logging.INFO)
+fmt = logging.Formatter("[%(asctime)s] %(message)s")
+sh = logging.StreamHandler(); sh.setFormatter(fmt); logger.addHandler(sh)
+fh = RotatingFileHandler(log_dir / "nlu.log", maxBytes=300_000,
+                         backupCount=5, encoding="utf-8")
+fh.setFormatter(fmt); logger.addHandler(fh)
+
+csv_path = log_dir / "nlu_log.csv"
+if not csv_path.exists():
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["timestamp", "raw_text", "intent", "slots_json"])
+
+# ───────── yt_dlp logger ────────
+ydl_logger = logging.getLogger("yt_dlp")
+ydl_handler = logging.StreamHandler()
+ydl_formatter = logging.Formatter("[yt_dlp] %(message)s")
+ydl_handler.setFormatter(ydl_formatter)
+ydl_logger.addHandler(ydl_handler)
+ydl_logger.setLevel(logging.WARNING)
+
+
+def _append_csv(ts, raw, intent, slots):
+    with csv_path.open("a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([ts, raw, intent,
+                                json.dumps(slots, ensure_ascii=False)])
+
+# ───────── register fonts ──────────────────────────────────────────
 def _register_emoji_font() -> None:
     """Colour-emoji face used only for icons and buttons."""
     local = next((p for p in ("NotoColorEmoji.ttf", "seguiemj.ttf")
@@ -56,285 +91,281 @@ def _register_emoji_font() -> None:
     if local and Path(local).exists():
         LabelBase.register(name="Emoji", fn_regular=str(Path(local)))
 
+
 def _install_global_unicode_font() -> None:
+    """Pick the first wide-Unicode sans font we can find and register it."""
     search = [
-        "NotoSansKR-Regular.otf", "NotoSansCJK-Regular.ttc",
-        "NanumGothic.ttf", "NanumGothic.otf",
-        "NotoSansSC-Regular.otf", "NotoSans-Regular.ttf", "DejaVuSans.ttf",
-        "msyh.ttc",
-        # – Windows –
-        r"C:\Windows\Fonts\malgun.ttf",
-        r"C:\Windows\Fonts\malgun.ttf",
-        r"C:\Windows\Fonts\nanum.ttf", 
-        # – macOS –
+        # common full CJK or pan-Unicode faces
+        "NotoSansCJK-Regular.ttc", "NotoSansKR-Regular.otf",
+        "NanumGothic.ttf", "NanumGothic.otf", "NotoSansSC-Regular.otf",
+        "NotoSans-Regular.ttf", "DejaVuSans.ttf", "msyh.ttc",
+        # Windows
+        r"C:\Windows\Fonts\malgun.ttf",  r"C:\Windows\Fonts\nanum.ttf",
+        # macOS
         "/System/Library/Fonts/AppleSDGothicNeo.ttc",
         "/System/Library/Fonts/PingFang.ttc",
-        # – Linux common locations –
+        # Linux distro locations
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for p in search:
         if Path(p).exists():
+            resource_add_path(str(Path(p).parent))
             LabelBase.register(name="Roboto", fn_regular=str(Path(p)))
+            LabelBase.register(name="UI",     fn_regular=str(Path(p)))
             print(f"✓ Unicode font installed: {Path(p).name}")
             return
     print("⚠️  No wide-Unicode font found; non-Latin glyphs may show □")
 
-# call once before any widgets are built
 _register_emoji_font()
 _install_global_unicode_font()
-# ──────────────────────────────────────────────────────────────────────
+# ───────────────────────────────────────────────────────────────────
 
-
-# ───────── Guardian API ─────
+# ───────── Guardian helper ──────
 class GuardianNewsAPI:
     BASE_URL = "https://content.guardianapis.com/search"
-
-    def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or os.getenv("GUARDIAN_KEY")
-        if not self.api_key:
-            raise ValueError("Guardian API key not supplied")
-
-    def fetch_news(self, amount=10):
-        p = {"api-key": self.api_key,
-             "show-fields": "trailText",
-             "order-by": "newest",
-             "page-size": max(1, min(amount, 200))}
-        r = requests.get(self.BASE_URL, params=p, timeout=10).json()
-        out = []
-        for it in r["response"]["results"]:
+    def __init__(self, key=None):
+        self.key = key or os.getenv("GUARDIAN_KEY")
+        if not self.key:
+            raise ValueError("GUARDIAN_KEY missing")
+    @staticmethod
+    def _clean(raw): return html.unescape(re.sub(r"<[^>]+>", "", raw)).strip()
+    def fetch_news(self, *, amount=10, keyword=None):
+        p = {"api-key": self.key, "show-fields": "trailText",
+             "order-by": "newest", "page-size": min(max(amount,1),200)}
+        if keyword: p["q"] = keyword
+        r = requests.get(self.BASE_URL, params=p, timeout=10); r.raise_for_status()
+        news=[]
+        for it in r.json()["response"]["results"]:
             preview = textwrap.shorten(
-                textwrap.dedent(it.get("fields", {}).get("trailText", ""))
-                        .replace("\n", " "),
-                width=140, placeholder="…")
-            out.append({"title": it["webTitle"],
-                        "url": it["webUrl"],
-                        "preview": preview,
-                        "date": datetime.fromisoformat(
-                            it["webPublicationDate"].replace("Z", "+00:00")
-                        ).strftime("%Y-%m-%d")})
-        return out
+                self._clean(it.get("fields", {}).get("trailText",""))
+                .replace("\n"," "),
+                140, placeholder="…")
+            news.append(dict(
+                title=it["webTitle"],
+                url=it["webUrl"],
+                preview=preview,
+                date=datetime.fromisoformat(
+                       it["webPublicationDate"].replace("Z","+00:00")
+                     ).strftime("%Y-%m-%d")
+            ))
+        return news
 
-# ───────── yt-dlp helper ─────
-def resolve_stream_url(webpage_url: str) -> str:
-    class QuietLogger:
-        def debug(self, *_):   pass
-        def warning(self, *_): pass
-        def error(self, msg):  print(f"[yt-dlp] {msg}")
-    opts = {"format": "bestaudio[ext=m4a]/bestaudio/best",
-            "quiet": True, "no_warnings": True, "logger": QuietLogger()}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        return ydl.extract_info(webpage_url, download=False)["url"]
-
-# ───────── VLC wrapper ──────
-class MusicPlayer:
-    def __init__(self):
-        self.instance  = vlc.Instance()
-        self.player    = self.instance.media_player_new()
-        self.media     = None
-        self.is_paused = False
-
-    def load_and_play(self, stream_url: str):
-        self.media = self.instance.media_new(
-            stream_url,
-            ":http-user-agent=Mozilla/5.0",
-            ":http-referrer=https://www.youtube.com/")
-        self.player.set_media(self.media)
-        self.player.play()
-        self.is_paused = False
-        print("🎵 Playing")
-
-    def toggle_pause(self):
-        if self.player.is_playing() and not self.is_paused:
-            self.player.pause(); self.is_paused = True;  print("⏸️ Paused")
-        else:
-            self.player.play();  self.is_paused = False; print("▶️ Resumed")
-
-    def stop(self):
-        self.player.stop(); self.is_paused = False; print("⏹️ Stopped")
-
-    def seek(self, offset_sec: int):
-        pos = self.player.get_time()
-        if pos == -1:
-            return
-        new = max(0, pos + offset_sec * 1000)
-        if self.player.get_length() > 0:
-            new = min(new, self.player.get_length())
-        self.player.set_time(int(new))
-
-# ───────── UI root ──────────
+# ───────── KV root widget ───────
 class MainUI(BoxLayout):
     def show_error(self, msg):
         self.ids.news_label.text = f"[color=ff3333]{msg}[/color]"
+    def toggle_request_bar(self):
+        bar = self.ids.request_bar
+        if bar.height == 0:
+            bar.height, bar.opacity = dp(44), 1
+            self.ids.request_input.focus = True
+        else:
+            bar.height, bar.opacity = 0, 0
 
-# ───────── Main App ─────────
+# ───────── main app class ───────
 class AIWeatherApp(App):
 
-    # build ---------------------------------------------------
+    # ---- lifecycle ------------------------------------------------
     def build(self):
-        self.music_player   = MusicPlayer()
-        self._music_bar: ModalView | None = None
-        self.news_api       = GuardianNewsAPI()
-
-        self._news_buffer:  deque[dict] = deque()
-        self._recent_urls:  deque[str]  = deque(maxlen=50)
+        self.news_api      = GuardianNewsAPI()
+        self.current_city  = "London"
+        self._news_keyword = None
+        self._news_buffer  = deque(); self._recent_urls = deque(maxlen=50)
+        self._init_player()
         return MainUI()
 
-    # life-cycle ---------------------------------------------
     def on_start(self):
         self.get_weather(); self.refresh_news()
+        Clock.schedule_interval(self.get_weather, 600)
         Clock.schedule_interval(self.refresh_news, 300)
 
-    # WEATHER -------------------------------------------------
-    def get_weather(self, *_):
+    # ---- weather --------------------------------------------------
+    def get_weather(self, city=None, *_):
+        city = city or self.current_city or "London"
         def task():
-            k = os.getenv("OPENWEATHER_KEY")
-            if not k:
+            key=os.getenv("OPENWEATHER_KEY")
+            if not key:
                 Clock.schedule_once(lambda *_:
-                    self._update_weather("❌", "OPENWEATHER_KEY missing"))
-                return
+                    self._upd_weather("❌","OPENWEATHER_KEY missing")); return
             try:
-                r = requests.get(
-                    "https://api.openweathermap.org/data/2.5/weather",
-                    params=dict(q="London", appid=k, units="metric", lang="en"),
-                    timeout=8).json()
-                desc, temp = r["weather"][0]["main"], r["main"]["temp"]
-                emoji = {"Clear":"☀️","Clouds":"☁️","Rain":"🌧️","Snow":"❄️",
-                         "Thunderstorm":"⚡","Drizzle":"🌦️","Mist":"🌫️",
-                         "Haze":"🌫️","Fog":"🌁"}.get(desc,"🌈")
-                icon, line = emoji, f"{desc}, {temp:.1f} °C"
-            except Exception as e:
-                print("Weather error:", e); icon, line = "❌", "API error"
-            Clock.schedule_once(lambda *_: self._update_weather(icon, line))
-        threading.Thread(target=task, daemon=True).start()
+                r=requests.get("https://api.openweathermap.org/data/2.5/weather",
+                               params=dict(q=city,appid=key,units="metric",lang="en"),
+                               timeout=8); r.raise_for_status(); d=r.json()
+                desc,temp=d["weather"][0]["main"], d["main"]["temp"]
+                emoji={"Clear":"☀️","Clouds":"☁️","Rain":"🌧️","Snow":"❄️",
+                       "Thunderstorm":"⚡","Drizzle":"🌦️",
+                       "Mist":"🌫️","Haze":"🌫️","Fog":"🌁"}.get(desc,"🌈")
+                Clock.schedule_once(lambda *_:
+                    self._upd_weather(emoji, f"{city}: {desc}, {temp:.1f} °C"))
+            except Exception as exc:
+                Clock.schedule_once(lambda *_:
+                    self._upd_weather("❌","API error")); print(exc)
+        EXECUTOR.submit(task)
+    def _upd_weather(self, icon, line):
+        self.root.ids.weather_icon.text=icon
+        self.root.ids.weather_label.text=line
 
-    def _update_weather(self, icon, line):
-        self.root.ids.weather_icon.text  = icon
-        self.root.ids.weather_label.text = line
-
-    # NEWS ----------------------------------------------------
-    def refresh_news(self, *_):
+    # ---- news -----------------------------------------------------
+    def refresh_news(self,*_):
         if self._news_buffer:
-            a = self._news_buffer.popleft(); self._recent_urls.append(a["url"])
-            Clock.schedule_once(lambda *_: self._show_headline(a))
+            art=self._news_buffer.popleft(); self._recent_urls.append(art["url"])
+            Clock.schedule_once(lambda *_: self._show_headline(art))
         else:
-            threading.Thread(target=self._fill_buffer, daemon=True).start()
-
+            EXECUTOR.submit(self._fill_buffer)
     def _fill_buffer(self):
         try:
-            items  = self.news_api.fetch_news(50)
-            fresh  = [a for a in items if a["url"] not in self._recent_urls]
-            if not fresh: self._recent_urls.clear(); fresh = items
+            items=self.news_api.fetch_news(amount=50, keyword=self._news_keyword)
+            fresh=[a for a in items if a["url"] not in self._recent_urls]
+            if not fresh: self._recent_urls.clear(); fresh=items
             self._news_buffer.extend(fresh)
-        except Exception as e:
-            Clock.schedule_once(
-                lambda *_: self.root.show_error(f"Guardian API error: {e}"))
-            return
-        self.refresh_news()
-
+        except (RequestException,ValueError) as e:
+            Clock.schedule_once(lambda *_:
+                self.root.show_error(f"Guardian API error: {e}")); return
+        if self._news_buffer:
+            art=self._news_buffer.popleft(); self._recent_urls.append(art["url"])
+            Clock.schedule_once(lambda *_: self._show_headline(art))
     def _show_headline(self, art):
-        lbl = self.root.ids.news_label; lbl.opacity = 0
-        lbl.text = ("[ref={url}][b]{title}[/b]\n{preview}[/ref]\n"
-                    "[size=24]via The Guardian · {date}[/size]").format(**art)
-        Animation(opacity=1, duration=0.25).start(lbl)
+        lbl=self.root.ids.news_label; lbl.opacity=0
+        lbl.text=(f"[ref={art['url']}][b]{art['title']}[/b]\n{art['preview']}[/ref]\n"
+                  f"[size=24]via The Guardian · {art['date']}[/size]")
+        Animation(opacity=1, d=.25).start(lbl)
+    def open_article(self, url): webbrowser.open(url)
 
-    def open_article(self, url, *_): webbrowser.open(url)
-
-    # MUSIC – threaded search --------------------------------
-    def get_music(self, *_):
-        q = self.root.ids.music_query.text.strip()
-        if not q: return
-        threading.Thread(target=self._search_and_show, args=(q,), daemon=True).start()
-
-    def _search_and_show(self, query):
-        results = self._search_youtube(query)
-        Clock.schedule_once(lambda *_: self._open_search_popup(results))
-
-    def _search_youtube(self, query, max_results=5):
-        opts = {"quiet": True, "extract_flat": "in_playlist",
-                "format": "bestaudio[ext=m4a]/bestaudio/best",
-                "default_search": f"ytsearch{max_results}", "noplaylist": True}
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            entries = (ydl.extract_info(query, download=False)
-                       .get("entries", []) or [])
-        return [(e.get("url") or e.get("webpage_url"), e.get("title","No title"))
-                for e in entries if (e.get("url") or e.get("webpage_url"))]
-
-    def _open_search_popup(self, results):
-        if not results: return
-        layout = GridLayout(cols=1, spacing=dp(5), padding=dp(10),
-                            size_hint_y=None)
-        layout.bind(minimum_height=layout.setter("height"))
-        scroll = ScrollView(); scroll.add_widget(layout)
-        popup  = Popup(title="Select a track", content=scroll,
-                       size_hint=(0.8, None), height=dp(300))
-        for url, title in results:
-            btn = Button(text=title, size_hint_y=None, height=dp(40),
-                         on_release=lambda b,u=url,t=title: self._pick_track(u,t,popup))
-            layout.add_widget(btn)
-        popup.open()
-
-    # MUSIC – threaded resolve & play ------------------------
-    def _pick_track(self, url, title, popup):
-        popup.dismiss()
-        threading.Thread(target=self._resolve_and_play,
-                         args=(url, title), daemon=True).start()
-
-    def _resolve_and_play(self, url, title):
-        try:  stream = resolve_stream_url(url)
+    # ---- NLU routing ---------------------------------------------
+    def process_request(self,*_):
+        t=self.root.ids.request_input.text.strip()
+        if not t: return
+        EXECUTOR.submit(nlu_infer, t)\
+                .add_done_callback(partial(self._route_from_nlu, raw=t))
+    def _route_from_nlu(self, fut, raw):
+        ts=datetime.utcnow().isoformat(timespec="seconds")
+        try: intent, slots=fut.result()
         except Exception as e:
-            print("Stream error:", e); return
-        Clock.schedule_once(lambda *_: self._play_stream(stream, title))
+            Clock.schedule_once(lambda *_: self.root.show_error("NLU error")); print(e); return
+        buckets=defaultdict(list)
+        for w,t in slots:
+            if t and t!="O": buckets[t.split("-")[-1].lower()].append(w)
+        slot_json={k:" ".join(v) for k,v in buckets.items()}
+        logger.info('INTENT=%s  SLOTS=%s  RAW="%s"', intent, slot_json, raw)
+        _append_csv(ts, raw, intent, slot_json)
+        Clock.schedule_once(lambda *_: self._apply_nlu_result(intent, buckets))
+    def _apply_nlu_result(self, intent, buckets):
+        loc=" ".join(buckets.get("location",[])).title()
+        topic=" ".join(buckets.get("topic",[])); words=" ".join(sum(buckets.values(),[]))
+        if intent=="get_weather":
+            if loc: self.current_city=loc; self.get_weather()
+        elif intent=="get_news":
+            self._news_keyword=topic or words or None
+            self._news_buffer.clear(); self.refresh_news()
+        elif intent=="play_music":
+            query=(topic or words).strip(); self.get_music(query=query or None)
+        else:
+            self.root.ids.request_input.hint_text="Try “weather in Berlin” or “news about rugby”."
+            return
+        self.root.ids.request_input.text=""; self.root.toggle_request_bar()
 
-    def _play_stream(self, stream, title):
-        self.music_player.load_and_play(stream)
-        self.root.ids.music_icon.text  = "🎵"
-        self.root.ids.music_label.text = f"Now Playing: {title}"
-        self._show_music_bar()
+    # ───────── YouTube music (yt_dlp + python-vlc) ─────────
+    def _init_player(self):
+        if vlc is None: self._vlc=self.player=None; return
+        self._vlc=vlc.Instance("--no-xlib","--quiet","--novideo")
+        self.player=self._vlc.media_player_new()
 
-    # MUSIC – floating bar -----------------------------------
-    def _show_music_bar(self):
-        if self._music_bar: return
-        bar = BoxLayout(orientation="horizontal", spacing=dp(8), padding=dp(10))
-        make = lambda txt, cb: Button(text=txt, font_name="Emoji",
-                                      font_size="24sp",
-                                      size_hint=(None,None), size=(dp(60),dp(60)),
-                                      background_normal="", background_color=(.3,.3,.3,.9),
-                                      on_release=cb)
-        bar.add_widget(make("⏮️", lambda *_: self.music_back()))
-        self._btn_pause = make("⏸️", lambda *_: self.music_pause_resume()); bar.add_widget(self._btn_pause)
-        bar.add_widget(make("⏭️", lambda *_: self.music_forward()))
-        bar.add_widget(make("⏹️", lambda *_: self.music_stop()))
+    # -- public entry --
+    def get_music(self, query=None, *_):
+        if not query: self._music_error("No music keywords found"); return
+        ids=self.root.ids; ids.music_icon.text="🔍"; ids.music_label.text=f"Searching “{query}”…"
+        EXECUTOR.submit(self._yt_search, query).add_done_callback(self._after_search)
 
-        mv = ModalView(size_hint=(None,None), size=(dp(340), dp(80)),
-                       background_color=(0,0,0,0), auto_dismiss=False)
-        mv.add_widget(bar)
-        mv.open()
-        mv.center_x, mv.y = self.root.center_x, dp(10)
-        self._music_bar = mv
+    # -- background helpers --
+    @staticmethod
+    def _yt_search(query, max_results=5):
+        opts={
+            "quiet": True,
+            "extract_flat": "in_playlist",
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "default_search": f"ytsearch{max_results}",
+            "noplaylist": True,
+            "logger": ydl_logger,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            entries=(ydl.extract_info(query, download=False).get("entries",[]) or [])
+        out=[]
+        for e in entries:
+            url=e.get("url") or e.get("webpage_url")
+            if url: out.append(dict(url=url,title=e.get("title","No title"),
+                                    uploader=e.get("uploader") or "YouTube"))
+        return out
 
-    def _close_music_bar(self):
-        if self._music_bar: self._music_bar.dismiss(); self._music_bar = None
+    @staticmethod
+    def _yt_fetch_url(video_url):
+        opts={
+            "quiet": True,
+            "skip_download": True,
+            "forceurl": True,
+            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "logger": ydl_logger,
+        }
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(video_url, download=False)["url"]
 
-    # BUTTON callbacks ---------------------------------------
-    def music_pause_resume(self):
-        self.music_player.toggle_pause()
-        if self._music_bar:
-            self._btn_pause.text = "▶️" if self.music_player.is_paused else "⏸️"
+    # -- UI helpers --
+    def _music_error(self,msg):
+        Clock.schedule_once(lambda *_:(
+            setattr(self.root.ids.music_icon,"text","❌"),
+            setattr(self.root.ids.music_label,"text",msg)))
+    def _after_search(self,fut):
+        try: results=fut.result()
+        except Exception as e: self._music_error(str(e)); return
+        if not results: self._music_error("No results"); return
+        Clock.schedule_once(lambda *_: self._show_results(results))
+    def _show_results(self, results):
+        ROW_H=dp(40)
+        inner=GridLayout(cols=1,spacing=dp(5),
+                         padding=[dp(8),dp(8),dp(8),dp(8)],
+                         size_hint_y=None)
+        inner.bind(minimum_height=inner.setter("height"))
+        for r in results:
+            btn=Button(text=r["title"],size_hint_y=None,height=ROW_H,
+                       halign="center",valign="middle")
+            btn.bind(size=lambda b,*_: setattr(b,"text_size",(b.width-dp(20),None)))
+            btn.bind(on_release=lambda b,res=r: (
+                popup.dismiss(),
+                EXECUTOR.submit(self._prepare_and_play,res)))
+            inner.add_widget(btn)
+        scroll=ScrollView(do_scroll_x=False); scroll.add_widget(inner)
+        popup=Popup(title="Select a track",content=scroll,
+                    size_hint=(0.8,None),height=dp(300),auto_dismiss=True)
+        popup.open()
+    def _prepare_and_play(self, res):
+        try:
+            stream=self._yt_fetch_url(res["url"])
+            Clock.schedule_once(lambda *_: self._play(stream,res["title"]))
+        except Exception as e: self._music_error(str(e))
+    def _play(self, stream_url, title):
+        if self.player is None: self._music_error("python-vlc not installed"); return
+        media=self._vlc.media_new(stream_url); self.player.set_media(media); self.player.play()
+        ids=self.root.ids; ids.music_icon.text="🎵"; ids.music_label.text=title; ids.btn_play.text="⏸️"
+    # playback controls
+    def music_play_pause(self,*_):
+        if not self.player: return
+        if self.player.is_playing(): self.player.pause(); self.root.ids.btn_play.text="▶️"
+        else: self.player.play(); self.root.ids.btn_play.text="⏸️"
+    def music_stop(self,*_):
+        if self.player: self.player.stop()
+        ids=self.root.ids; ids.music_icon.text="🎵"; ids.music_label.text="Stopped"; ids.btn_play.text="▶️"
+    def _seek(self, sec):
+        if not self.player: return
+        pos=self.player.get_time()/1000; self.player.set_time(int(max(pos+sec,0)*1000))
+    def music_back(self,*_):   self._seek(-10)
+    def music_forward(self,*_):self._seek(+10)
 
-    def music_forward(self):  self.music_player.seek(+10)
-    def music_back(self):     self.music_player.seek(-10)
-    def music_stop(self):
-        self.music_player.stop(); self._close_music_bar()
-        self.root.ids.music_icon.text  = ""
-        self.root.ids.music_label.text = "Stopped."
+    # ---- chatbot placeholder ----
+    def ask_chatbot(self,*_):
+        self.root.ids.chatbot_icon.text="🤖"
+        self.root.ids.chatbot_output.text="Don’t forget your umbrella!"
 
-    # CHATBOT -------------------------------------------------
-    def ask_chatbot(self, *_):
-        self.root.ids.chatbot_icon.text = "🤖"
-        self.root.ids.chatbot_output.text = "Don’t forget your umbrella!"
-
-# ───────── run ─────────
-if __name__ == "__main__":
+# ───────── bootstrap ────────────
+if __name__=="__main__":
     AIWeatherApp().run()

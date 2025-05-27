@@ -10,8 +10,8 @@
         size_hint_y: None
         height: self.minimum_height
         row_force_default: True
-        row_default_height: dp(90)   # same height for every row
-        spacing: dp(20)              # gap between left & right columns
+        row_default_height: dp(90)
+        spacing: dp(20)
 
         # ───────── 1 · WEATHER ─────────
         BoxLayout:
@@ -26,65 +26,74 @@
             Label:
                 id: weather_label
                 text: "—"
+                font_name: "UI"
                 markup: True
                 halign: "left"
                 valign: "middle"
                 text_size: self.width, None
         Button:
-            text: "Refresh weather"
-            size_hint: None, None
-            size: dp(180), dp(50)
-            on_release: app.get_weather()
+            text: "Request"
+            size_hint_x: None
+            width: dp(180)
+            on_release: root.toggle_request_bar()
 
         # ───────── 2 · NEWS ─────────
         Label:
             id: news_label
             text: "—"
+            font_name: "UI"
             markup: True
             halign: "left"
             valign: "middle"
             text_size: self.width, None
-            on_ref_press: app.open_article(args[1])
         Button:
             text: "Refresh news"
-            size_hint: None, None
-            size: dp(180), dp(50)
+            size_hint_x: None
+            width: dp(180)
             on_release: app.refresh_news()
 
         # ───────── 3 · MUSIC ─────────
         BoxLayout:
             spacing: dp(8)
-
-            # search field (takes the whole width)
-            TextInput:
-                id: music_query
-                hint_text: "Search YouTube…"
-                size_hint_y: None
-                height: dp(50)
-                size_hint_x: 1
-
-            # invisible placeholders so main.py can still update them
             Label:
                 id: music_icon
                 font_name: "Emoji"
                 text: ""
+                font_size: "34sp"
                 size_hint_x: None
-                width: 0
-                opacity: 0
-
+                width: self.texture_size[0]
             Label:
                 id: music_label
-                text: ""
-                size_hint_x: None
-                width: 0
-                opacity: 0
-
-        Button:
-            text: "Music"
-            size_hint: None, None
-            size: dp(180), dp(50)
-            on_release: app.get_music()
-
+                text: "—"
+                font_name: "UI"
+                halign: "left"
+                valign: "middle"
+                text_size: self.width, None
+        BoxLayout:
+            id: music_controls
+            spacing: dp(4)
+            size_hint_x: None
+            width: dp(180)
+            Button:
+                id: btn_back
+                font_name: "Emoji"
+                text: "⏮️"
+                on_release: app.music_back()
+            Button:
+                id: btn_play
+                font_name: "Emoji"
+                text: "▶️"
+                on_release: app.music_play_pause()
+            Button:
+                id: btn_fwd
+                font_name: "Emoji"
+                text: "⏭️"
+                on_release: app.music_forward()
+            Button:
+                id: btn_stop
+                font_name: "Emoji"
+                text: "⏹️"
+                on_release: app.music_stop()
 
         # ───────── 4 · ASK AI ─────────
         BoxLayout:
@@ -99,11 +108,33 @@
             Label:
                 id: chatbot_output
                 text: "—"
+                font_name: "UI"
                 halign: "left"
                 valign: "middle"
                 text_size: self.width, None
         Button:
             text: "Ask AI"
-            size_hint: None, None
-            size: dp(180), dp(50)
+            size_hint_x: None
+            width: dp(180)
             on_release: app.ask_chatbot()
+
+    # ───────── REQUEST BAR ─────────
+    BoxLayout:
+        id: request_bar
+        size_hint_y: None
+        height: 0
+        opacity: 0
+        spacing: dp(8)
+
+        TextInput:
+            id: request_input
+            font_name: "UI"
+            multiline: False
+            write_tab: False
+            hint_text: "Type a request..."
+            on_text_validate: app.process_request()
+        Button:
+            text: "Send"
+            size_hint_x: None
+            width: dp(100)
+            on_release: app.process_request()
