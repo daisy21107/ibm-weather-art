@@ -1,0 +1,5 @@
+requests
+beautifulsoup4
+python-vlc
+yt-dlp
+ibm-watson>=8.1.0
