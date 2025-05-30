@@ -14,7 +14,7 @@ model_id = os.getenv("WATSONX_MODEL_ID")
 
 params = {
   "decoding_method": "greedy",
-  "temperature": 0.5,
+  "temperature": 0.8,
   "min_new_tokens": 10,
   "max_new_tokens": 100
 }
