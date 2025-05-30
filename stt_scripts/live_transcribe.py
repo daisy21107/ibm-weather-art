@@ -1,5 +1,9 @@
-from ibm_watson import AssistantV2
+from ibm_watson import AssistantV2, TextToSpeechV1
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
+
+import tempfile
+import os
+import simpleaudio as sa
 
 import argparse
 import base64
@@ -17,7 +21,7 @@ import certifi
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
-RATE = 44100  # Will override dynamically
+RATE = 44100  
 FINALS = []
 LAST = None
 
@@ -54,6 +58,7 @@ def send_to_assistant(message_text):
         for entry in output:
             if entry.get('response_type') == 'text':
                 print("Watson Assistant: ", entry['text'])
+                os.system(f'say {entry["text"]}') # macOS text-to-speech command
     finally:
         assistant.delete_session(assistant_id=assistant_id, session_id=session_id)
 
