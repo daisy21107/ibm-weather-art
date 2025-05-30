@@ -1,5 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
+import os
+from dotenv import load_dotenv
+from urllib.parse import quote
+
+load_dotenv()
+
+api_key = os.getenv('GUARDIAN_API_KEY')
+if not api_key:
+    raise ValueError("GUARDIAN_API_KEY not found in environment variables. Please set it in .env file.")
 
 class GuardianNewsAPI:
     def __init__(self, api_key):
@@ -23,7 +32,7 @@ class GuardianNewsAPI:
         if query:  # only add query if it's not None
             params["q"] = query
 
-        query_string = "&".join(f"{k}={requests.utils.quote(str(v))}" for k, v in params.items())
+        query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
         return f"{self.base_url}?{query_string}"
 
     def fetch_news(self, query=None, result_num=5):
@@ -41,6 +50,8 @@ class GuardianNewsAPI:
         response = requests.get(api_url)
         if response.status_code != 200:
             print(f"❗ Failed to fetch: HTTP {response.status_code}")
+            if response.status_code == 401:
+                print("❗ Authentication failed. Please check your API key.")
             return
 
         data = response.json()
@@ -56,11 +67,10 @@ class GuardianNewsAPI:
             published = entry.get("webPublicationDate", "[No Date]")
             body = entry.get("fields", {}).get("body", "[No Body Content]")
 
-            # 去掉HTML标签展示正文纯文本（可选）
-
             clean_body = BeautifulSoup(body, "html.parser").get_text() if body else "[No Body Content]"
-
-            preview_body = clean_body[:500] + "..." if clean_body else "[No Body Content]"
+            # only show first 5 sentences 
+            preview_body = clean_body.split(".")
+            preview_body = ".".join(preview_body[:5]) + ". ..." if preview_body else "[No Body Content]"
 
             print(f"📰 Title: {title}")
             print(f"🔗 Link: {link}")
@@ -69,7 +79,6 @@ class GuardianNewsAPI:
             print("-" * 80)
 
 if __name__ == "__main__":
-    api_key = ""
     news_fetcher = GuardianNewsAPI(api_key)
     query = input("🔍 Enter your search query (leave blank for latest news): ").strip()
     query = query if query else None
