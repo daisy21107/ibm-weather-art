@@ -1,3 +1,4 @@
+# This script is not used for current project. 
 import os
 import requests
 import vlc
@@ -7,6 +8,9 @@ import threading
 def play_music(audio_url):
     print(f"Playing: {audio_url}")
     player = vlc.MediaPlayer(audio_url)
+    if player is None:
+        print("Failed to create VLC player")
+        return
     player.play()
     time.sleep(1)  # Allow VLC to start
 

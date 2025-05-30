@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import Optional, Tuple, Dict, Any
 
 import vlc
 import yt_dlp
@@ -10,14 +11,18 @@ import platform
 # ----------- Music Player Class -----------
 class MusicPlayer:
     def __init__(self):
-        self.instance = vlc.Instance()
+        self.instance: Optional[vlc.Instance] = vlc.Instance()
+        if self.instance is None:
+            raise RuntimeError("Failed to create VLC instance")
         self.player = self.instance.media_player_new()
         self.media = None
         self.progress_thread = None
         self._stop_progress = False
         self.is_paused = False
 
-    def open(self, url):
+    def open(self, url: str) -> None:
+        if self.instance is None:
+            raise RuntimeError("VLC instance not initialized")
         self.media = self.instance.media_new(
             url,
             ":http-user-agent=Mozilla/5.0",
@@ -27,7 +32,7 @@ class MusicPlayer:
         self._stop_progress = False
         print("🎵 Media loaded.")
 
-    def play(self):
+    def play(self) -> None:
         if self.media is None:
             print("⚠️ No media loaded.")
             return
@@ -35,7 +40,7 @@ class MusicPlayer:
         print("▶️ Playing...")
         self._start_progress_thread()
 
-    def pause_resume(self):
+    def pause_resume(self) -> None:
         if self.player.is_playing():
             self.player.pause()
             self.is_paused = True
@@ -45,23 +50,23 @@ class MusicPlayer:
             self.is_paused = False
             print("▶️ Resumed.")
 
-    def stop(self):
+    def stop(self) -> None:
         self.player.stop()
         self._stop_progress = True
         print("⏹️ Stopped.")
 
-    def seek_forward(self, seconds=10):
+    def seek_forward(self, seconds: int = 10) -> None:
         current = self.player.get_time()
         self.player.set_time(current + seconds * 1000)
         print(f"⏩ Forwarded {seconds} seconds.")
 
-    def seek_backward(self, seconds=10):
+    def seek_backward(self, seconds: int = 10) -> None:
         current = self.player.get_time()
         self.player.set_time(max(0, current - seconds * 1000))
         print(f"⏪ Rewinded {seconds} seconds.")
 
-    def _start_progress_thread(self):
-        def show_progress():
+    def _start_progress_thread(self) -> None:
+        def show_progress() -> None:
             while not self._stop_progress:
                 if self.player.is_playing():
                     total = self.player.get_length() // 1000
@@ -74,43 +79,53 @@ class MusicPlayer:
         self.progress_thread.start()
 
 # ----------- YouTube Search -----------
-def format_duration(seconds):
+def format_duration(seconds: float) -> str:
     minutes = seconds // 60
     secs = seconds % 60
     return f"{int(minutes)}:{int(secs):02d}"
 
-def search_youtube(query, max_results=5):
+def search_youtube(query: str, max_results: int = 5) -> Tuple[Optional[str], Optional[str]]:
     ydl_opts = {
         'quiet': True,
         'extract_flat': 'in_playlist',
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        'default_search': f'ytsearch{max_results}',
+        'default_search': f'ytsearch{max_results*2}',
         'noplaylist': True,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(query, download=False)
-        entries = info.get('entries', [])
-
-        if not entries:
+        if info is None:
             print("❌ No results found.")
             return None, None
+            
+        entries = info.get('entries', [])
+        
+        # 过滤掉超过6分钟的视频
+        filtered_entries = [
+            entry for entry in entries 
+            if 'duration' in entry and entry['duration'] <= 360
+        ]
 
-        print("\n🎶 Search Results:")
-        print(f"{'No.':<4} {'Title':<50} {'Uploader':<25} {'Upload Date':<12} {'Duration':<8}")
-        print("-" * 105)
+        if not filtered_entries:
+            print("❌ No results found (after filtering videos longer than 6 minutes).")
+            return None, None
 
-        for i, entry in enumerate(entries):
+        print("\n🎶 Search Results (filtered to 6 minutes or less):")
+        print(f"{'No.':<4} {'Title':<50} {'Uploader':<25} {'Duration':<8}")
+        print("-" * 95)
+
+        for i, entry in enumerate(filtered_entries[:max_results]):
             title = entry.get('title', '')[:48] + ('…' if len(entry.get('title', '')) > 48 else '')
             uploader = entry.get('uploader', '')[:23]
-            duration = format_duration(entry.get('duration', 0)) if 'duration' in entry else "Unknown"
+            duration = format_duration(entry.get('duration', 0))
             print(f"{i + 1:<4} {title:<50} {uploader:<25} {duration:<8}")
 
         while True:
             try:
-                choice = int(input(f"\nSelect a song (1-{len(entries)}): "))
-                if 1 <= choice <= len(entries):
-                    selected = entries[choice - 1]
+                choice = int(input(f"\nSelect a song (1-{len(filtered_entries[:max_results])}): "))
+                if 1 <= choice <= len(filtered_entries[:max_results]):
+                    selected = filtered_entries[choice - 1]
                     return selected['url'], selected['title']
                 else:
                     print("⚠️ Invalid choice.")
@@ -118,26 +133,28 @@ def search_youtube(query, max_results=5):
                 print("⚠️ Please enter a number.")
 
 # ----------- Stream Resolver -----------
-def resolve_stream_url(webpage_url):
+def resolve_stream_url(webpage_url: str) -> str:
     ydl_opts = {
         'quiet': True,
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(webpage_url, download=False)
+        if info is None:
+            raise RuntimeError("Failed to extract video info")
         return info['url']
 
 # ----------- Keyboard Input Handling -----------
-def get_single_key():
+def get_single_key() -> str:
     if platform.system() == "Windows":
         import msvcrt
-        key = msvcrt.getch()
+        key = msvcrt.getch()  # type: ignore
         if key == b'\r':
             return 'enter'
         elif key == b' ':
             return 'space'
         elif key == b'\xe0':
-            key2 = msvcrt.getch()
+            key2 = msvcrt.getch()  # type: ignore
             if key2 == b'K': return 'left'
             elif key2 == b'M': return 'right'
         elif key == b'\x03':
