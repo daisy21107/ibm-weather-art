@@ -1,3 +1,4 @@
+# This script is not used for current project. 
 import os
 import requests
 import vlc
