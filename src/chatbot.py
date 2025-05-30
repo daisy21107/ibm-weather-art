@@ -24,7 +24,7 @@ client = APIClient(credentials)
 params = {
     "decoding_method": "greedy",
     "temperature": 0.7,
-    "max_new_tokens": 300
+    "max_new_tokens": 1000
 }
 
 model = ModelInference(
@@ -57,6 +57,6 @@ def get_response(prompt: str) -> str:
 
 if __name__ == "__main__":
     prompt = input("Enter your prompt: ")
-    templated_prompt = f"Give your answer in 5 sentences. {prompt}"
+    templated_prompt = f"Reply in one paragraph. {prompt}"
     response = get_response(templated_prompt)
     print(f"\n\nResponse: \n{response}")
