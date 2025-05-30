@@ -1,9 +1,10 @@
 #! /bin/bash
 
+# create conda environment
 conda create -n iwa python=3.11
-
 conda activate iwa
 
+# install dependencies
 pip install -r requirements.txt
 
 # create empty .env file
