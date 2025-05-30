@@ -1,3 +1,6 @@
+#how to run script for 10 seconds:
+# python live_transcribe.py -t 10
+
 from ibm_watson import AssistantV2, TextToSpeechV1
 from ibm_cloud_sdk_core.authenticators import IAMAuthenticator
 
