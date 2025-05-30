@@ -4,3 +4,5 @@ python-vlc
 yt-dlp
 ibm-watsonx-ai
 dotenv
+ibm-watson
+ibm-cloud-sdk-core
