@@ -35,11 +35,15 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.popup import Popup
 from kivy.uix.button import Button
 from kivy.metrics import dp
 from kivy.animation import Animation
+from kivy.uix.spinner import Spinner
+from kivy.uix.textinput import TextInput
+from kivy.uix.widget import Widget
 
 # your Joint-BERT wrapper
 from BERT import infer as nlu_infer
@@ -120,7 +124,45 @@ def _install_global_unicode_font() -> None:
 
 _register_emoji_font()
 _install_global_unicode_font()
-# ───────────────────────────────────────────────────────────────────
+
+# ──────────────────── Reminder Manager ───────────────────────────────────────────────
+class ReminderManager:
+    def __init__(self):
+        self.reminder_list = self._create_reminder_list()
+
+    def _create_reminder_list(self):
+        reminder_list = {}
+        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
+            reminder_list[day] = {
+                "Morning": [None, None, None],
+                "Afternoon": [None, None, None],
+                "Evening": [None, None, None]
+            }
+        return reminder_list
+
+    def add_one_time(self, day, time, reminder):
+        for i in range(3):
+            if self.reminder_list[day][time][i] is None:
+                self.reminder_list[day][time][i] = reminder
+                break
+
+    def add_everyday(self, time, reminder):
+        for day in self.reminder_list:
+            for i in range(3):
+                if self.reminder_list[day][time][i] is None:
+                    self.reminder_list[day][time][i] = reminder
+                    break
+
+    def delete(self, day, time, reminder):
+        try:
+            index = self.reminder_list[day][time].index(reminder)
+            self.reminder_list[day][time][index] = None
+            self.reminder_list[day][time] = [x for x in self.reminder_list[day][time] if x is not None] + [None] * (3 - len(self.reminder_list[day][time]))
+        except ValueError:
+            pass
+
+    def get_all(self):
+        return self.reminder_list
 
 # ───────── Guardian helper ──────
 class GuardianNewsAPI:
@@ -169,6 +211,7 @@ class AIWeatherApp(App):
 
     # ---- lifecycle ------------------------------------------------
     def build(self):
+        self.reminder_manager = ReminderManager()
         self.news_api      = GuardianNewsAPI()
         self.current_city  = "London"
         self._news_keyword = None
@@ -178,6 +221,7 @@ class AIWeatherApp(App):
 
     def on_start(self):
         self.get_weather(); self.refresh_news()
+        self.update_today_reminder_summary()
         Clock.schedule_interval(self.get_weather, 600)
         Clock.schedule_interval(self.refresh_news, 300)
 
@@ -365,6 +409,99 @@ class AIWeatherApp(App):
     def ask_chatbot(self,*_):
         self.root.ids.chatbot_icon.text="🤖"
         self.root.ids.chatbot_output.text="Don’t forget your umbrella!"
+    
+    def open_reminder_popup(self):
+        popup = Popup(title="Weekly Reminders", size_hint=(0.95, 0.95))
+        
+        # Outer scrollable area
+        scroll = ScrollView()
+        
+        # Table grid: 8 columns (1 for time label + 7 for each day)
+        grid = GridLayout(cols=8, spacing=dp(5), padding=dp(10),
+                        size_hint_y=None)
+        grid.bind(minimum_height=grid.setter('height'))
+
+        # Header row
+        grid.add_widget(Label(text="", bold=True))  # Empty corner
+        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
+            grid.add_widget(Label(text=f"[b]{day}[/b]", markup=True, font_name="UI", size_hint_y=None, height=dp(30)))
+
+        # Fill grid with reminders
+        times = ["Morning", "Afternoon", "Evening"]
+        data = self.reminder_manager.get_all()
+        for time in times:
+            grid.add_widget(Label(text=f"[b]{time}[/b]", markup=True, font_name="UI", size_hint_y=None, height=dp(60)))
+            for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
+                reminders = data[day][time]
+                msg = "\n".join(r for r in reminders if r) or "—"
+                grid.add_widget(Label(text=msg, font_name="UI", font_size="13sp",
+                                    halign="left", valign="top",
+                                    size_hint_y=None, height=dp(60),
+                                    text_size=(dp(100), None)))
+
+        scroll.add_widget(grid)
+        popup.content = scroll
+        popup.open()
+
+    def open_add_reminder_popup(self):
+        popup = Popup(title="Add Reminder", size_hint=(0.8, 0.6))
+        
+        layout = GridLayout(cols=2, spacing=dp(10), padding=dp(20),
+                            row_default_height=dp(40), size_hint_y=None)
+        layout.bind(minimum_height=layout.setter('height'))
+
+        # Day selector
+        layout.add_widget(Label(text="Day:", font_name="UI"))
+        day_spinner = Spinner(
+            text="Monday",
+            values=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        )
+        layout.add_widget(day_spinner)
+
+        # Time selector
+        layout.add_widget(Label(text="Time:", font_name="UI"))
+        time_spinner = Spinner(
+            text="Morning",
+            values=["Morning", "Afternoon", "Evening"]
+        )
+        layout.add_widget(time_spinner)
+
+        # Reminder input
+        layout.add_widget(Label(text="Reminder:", font_name="UI"))
+        reminder_input = TextInput(multiline=False, font_name="UI")
+        layout.add_widget(reminder_input)
+
+        # Submit button
+        def submit_reminder(*_):
+            day = day_spinner.text
+            time = time_spinner.text
+            text = reminder_input.text.strip()
+            if text:
+                self.reminder_manager.add_one_time(day, time, text)
+                popup.dismiss()
+            self.update_today_reminder_summary()
+
+
+        layout.add_widget(Widget())  # spacer
+        layout.add_widget(Button(text="Add", on_release=submit_reminder))
+
+        scroll = ScrollView(); scroll.add_widget(layout)
+        popup.content = scroll
+        popup.open()
+        
+    def update_today_reminder_summary(self):
+        today = datetime.now().strftime("%A")  # e.g., "Monday"
+        reminders = self.reminder_manager.get_all().get(today, {})
+        summary_lines = []
+        for time in ["Morning", "Afternoon", "Evening"]:
+            entries = [r for r in reminders.get(time, []) if r]
+            if entries:
+                summary_lines.append(f"{time}: {', '.join(entries)}")
+        summary = "\n".join(summary_lines) if summary_lines else "No reminders today"
+        self.root.ids.reminder_summary.text = summary
+
+
+
 
 # ───────── bootstrap ────────────
 if __name__=="__main__":

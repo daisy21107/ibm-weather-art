@@ -78,45 +78,61 @@
                 id: btn_back
                 font_name: "Emoji"
                 text: "⏮️"
+                font_size: "3sp"
                 on_release: app.music_back()
             Button:
                 id: btn_play
                 font_name: "Emoji"
                 text: "▶️"
+                font_size: "3sp"
                 on_release: app.music_play_pause()
             Button:
                 id: btn_fwd
                 font_name: "Emoji"
                 text: "⏭️"
+                font_size: "3sp"
                 on_release: app.music_forward()
             Button:
                 id: btn_stop
                 font_name: "Emoji"
                 text: "⏹️"
+                font_size: "3sp"
                 on_release: app.music_stop()
 
-        # ───────── 4 · ASK AI ─────────
+        # ───────── 4 · REMINDERS ─────────
         BoxLayout:
+            orientation: 'horizontal'
             spacing: dp(8)
             Label:
-                id: chatbot_icon
+                id: reminder_icon
+                text: "📝"
                 font_name: "Emoji"
-                text: ""
                 font_size: "34sp"
                 size_hint_x: None
                 width: self.texture_size[0]
             Label:
-                id: chatbot_output
+                id: reminder_summary
                 text: "—"
                 font_name: "UI"
+                font_size: "13sp"
                 halign: "left"
                 valign: "middle"
                 text_size: self.width, None
-        Button:
-            text: "Ask AI"
+        BoxLayout:
+            id: reminders_controls
+            spacing: dp(4)
             size_hint_x: None
             width: dp(180)
-            on_release: app.ask_chatbot()
+            Button:
+                id: btn_open_rem
+                text: "Open Reminders"
+                font_size: "12sp"
+                on_release: app.open_reminder_popup()
+            Button:
+                id: btn_add_rem
+                text: "Add Reminders"
+                font_size: "12sp"
+                on_release: app.open_add_reminder_popup()
 
     # ───────── REQUEST BAR ─────────
     BoxLayout:
