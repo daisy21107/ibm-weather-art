@@ -1,27 +1,93 @@
-#! /bin/bash
+#!/usr/bin/env bash
+# ----------------------------------------------------------------------
+# setup.sh  –  one-shot project bootstrap for Raspberry Pi (64-bit OS)
+#
+#  • Installs system libraries the very first time (sudo password needed)
+#  • Creates / reuses a Python venv called “iwa-venv”
+#  • Installs all Python packages from requirements.txt
+#  • Redirects pip / HF / PyTorch / yt-dlp caches into ./.cache/
+#  • Generates a skeleton .env file on first run
+#  • Ensures a data/ directory exists
+# ----------------------------------------------------------------------
+set -euo pipefail
 
-# create conda environment
-conda create -n iwa python=3.11
-conda activate iwa
-
-# install dependencies
-pip install -r requirements.txt
-
-# create empty .env file
-if [ ! -f .env ]; then
-    echo "Creating empty .env file"
-    touch .env
-
-    echo "WATSONX_AI_URL=" >> .env
-    echo "WATSONX_API_KEY=" >> .env
-    echo "WATSONX_PROJECT_ID=" >> .env
-    echo "WATSONX_MODEL_ID=" >> .env
-    echo "OPENWEATHER_API_KEY=" >> .env
-    echo "GUARDIAN_API_KEY=" >> .env
-    echo "Completed creating .env file"
+# -------- 0) system-wide C/C++ libraries (one-time) -------------------
+if ! dpkg -s libvlc-dev >/dev/null 2>&1; then
+  echo "🔧 Installing system libraries (sudo password may be required)…"
+  sudo apt update
+  sudo apt install -y python3-venv python3-dev build-essential \
+       libffi-dev libssl-dev libvlc-dev \
+       libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+       libgl1-mesa-dev libgles2-mesa-dev \
+       libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+else
+  echo "✔︎ System libraries already present – skipping apt install."
 fi
 
-# create empty data/ directory
-mkdir -p data/
+# -------- 1) create & activate virtual environment -------------------
+if [ ! -d "iwa-venv" ]; then
+  echo "🐍 Creating virtual environment (Python 3)…"
+  python3 -m venv iwa-venv
+fi
+# shellcheck disable=SC1091
+source iwa-venv/bin/activate
+echo "🔗 Virtual environment 'iwa-venv' activated."
 
-echo "Setup complete"
+# -------- 2) redirect caches into the repo ---------------------------
+ACTIVATE_POST="$VIRTUAL_ENV/bin/postactivate"
+if [ ! -f "$ACTIVATE_POST" ]; then
+  echo "⚙️  Creating venv post-activate hook to relocate caches…"
+  cat <<'EOF' > "$ACTIVATE_POST"
+# --- local cache dirs to keep everything inside /home/pi/aiweather ---
+export PIP_CACHE_DIR="$VIRTUAL_ENV/../.cache/pip"
+export HF_HOME="$VIRTUAL_ENV/../.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME"
+export TORCH_HOME="$VIRTUAL_ENV/../.cache/torch"
+export YTDLP_HOME="$VIRTUAL_ENV/../.cache/yt-dlp"
+EOF
+  chmod +x "$ACTIVATE_POST"
+fi
+# shellcheck disable=SC1091
+source "$ACTIVATE_POST"
+echo "🗂  Cache directories redirected into ./\.cache/*"
+
+# -------- 3) upgrade installer tools, then install deps --------------
+python -m pip install --upgrade pip setuptools wheel
+
+#  -- optional but faster: pull PyTorch wheel first -------------------
+pip install --no-cache-dir torch==2.3.0+cpu \
+  --index-url https://download.pytorch.org/whl/cpu
+
+#  -- bulk-install everything else ------------------------------------
+pip install --no-cache-dir -r requirements.txt
+
+# -------- 4) scaffold .env with empty keys ---------------------------
+if [ ! -f .env ]; then
+  echo "🗝️  Creating .env file with API-key placeholders…"
+  cat <<'EOF' > .env
+# ─── API / Secret keys ────────────────────────────────────────────────
+WATSONX_AI_URL=
+WATSONX_API_KEY=
+WATSONX_PROJECT_ID=
+WATSONX_MODEL_ID=
+OPENWEATHER_API_KEY=
+GUARDIAN_API_KEY=
+EOF
+  echo "→ .env created — fill in your keys before running the app."
+else
+  echo "✔︎ .env already exists — leaving it unchanged."
+fi
+
+# -------- 5) make sure data/ folder is present -----------------------
+mkdir -p data/
+echo "📂 Ensured data/ directory exists."
+
+# -------- 6) helpful Kivy environment tweaks ------------------------
+echo
+echo "👉 Tip: add these to ~/.bashrc if you run Kivy full-screen:"
+echo "   export KIVY_GL_BACKEND=sdl2"
+echo "   export KIVY_WINDOW=sdl2"
+echo
+
+echo "✅ Setup complete!  Run:"
+echo "   source iwa-venv/bin/activate && python main.py"
