@@ -37,7 +37,7 @@ An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elde
 ```bash
 # 1) grab the code
 cd /home/pi
-git clone https://github.com/<your-org>/aiweather.git
+git clone https://github.com/daisy21107/ibm-weather-art.git aiweather
 cd aiweather
 
 # 2) make the helper executable
