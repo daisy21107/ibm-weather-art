@@ -1,10 +1,10 @@
 # aiweather
 
-*Raspberry Pi‑4 powered kiosk dashboard that mixes live weather, news, YouTube‑radio loops and IBM watsonx.ai text generation, all wrapped in a touch‑friendly Kivy UI.*
+*Raspberry Pi 4 powered kiosk dashboard that mixes live weather, news, YouTube‑radio loops and IBM watsonx.ai text generation, all wrapped in a touch‑friendly Kivy UI.*
 
 ---
 
-# IBM – 3D Printed AI Weather Art
+# IBM – 3D‑Printed AI Weather Art
 
 An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elderly individuals living alone. The installation blends the software in *aiweather* with a physical sculpture, using IBM Watson Assistant for conversation, live weather forecasting, voice interaction, and personalised media suggestions.
 
@@ -21,14 +21,17 @@ An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elde
 ## 📂 Project layout
 
 ```text
-/home/pi/aiweather            # ← clone this repo here
-├── main.py                   # application entry‑point
+/home/pi/aiweather            # ← clone repo into this exact folder name
+├── UI/                       # Kivy front‑end
+│   └── main.py               # application entry‑point
 ├── BERT.py                   # lightweight BERT wrapper
 ├── requirements.txt          # python dependencies
 ├── setup.sh                  # one‑shot bootstrap script
 ├── data/                     # runtime downloads & cache
-└── …                         # your other source files, assets, docs
+└── …                         # other source files, assets, docs
 ```
+
+> **Why */home/pi/aiweather*?**  Cloning directly into that folder keeps everything self‑contained, making backups and SD‑card migrations dead‑simple.
 
 ---
 
@@ -37,6 +40,7 @@ An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elde
 ```bash
 # 1) grab the code
 cd /home/pi
+# clone into a folder explicitly named aiweather
 git clone https://github.com/daisy21107/ibm-weather-art.git aiweather
 cd aiweather
 
@@ -55,9 +59,9 @@ What *setup.sh* actually does:
 | **🐍 Virtual‑env** | Creates `iwa-venv/` using `python -m venv`, then upgrades `pip setuptools wheel`.                                         |
 | **🔌 Python deps** | Installs `torch==2.3.0+cpu` first (quickest on ARM) and the rest of `requirements.txt`.                                   |
 | **🔑 Secrets**     | Generates a blank `.env` with placeholders for API keys. Edit it before running the app!                                  |
-| **📂 Folders**     | Ensures an empty `data/` directory exists.                                                                                |
+| **📂 Folders**     | Ensures an empty `data/` directory exists, plus redirects all package caches into `./.cache/`.                            |
 
-> **Note:** the script auto‑skips steps it has already completed, so you can safely re‑run it after a pull.
+> **Note:** you can safely re‑run *setup.sh* after a `git pull`; it skips anything already done.
 
 ---
 
@@ -83,7 +87,7 @@ Save the file—`python-dotenv` will load it automatically at runtime.
 ```bash
 cd /home/pi/aiweather
 source iwa-venv/bin/activate   # activate the environment
-python main.py                 # launch the kiosk UI
+python UI/main.py              # launch the kiosk UI
 ```
 
 ### Updating later
@@ -93,28 +97,28 @@ cd /home/pi/aiweather
 git pull                        # grab latest commits
 ./setup.sh                      # installs new deps if any
 source iwa-venv/bin/activate
-python main.py
+python UI/main.py
 ```
 
 ---
 
 ## 🛠️ Optional tweaks
 
-| Use‑case                  | Command / file                                                                                                     |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Smoother GL & hide cursor | Add to `~/.bashrc`:<br>`export KIVY_GL_BACKEND=sdl2`<br>`export KIVY_WINDOW=sdl2`                                  |
-| Auto‑start on boot        | Create a systemd service pointing to `ExecStart=/home/pi/aiweather/iwa-venv/bin/python /home/pi/aiweather/main.py` |
-| Clean rebuild             | `rm -rf iwa-venv` then rerun `./setup.sh`                                                                          |
+| Use‑case                  | Command / file                                                                                                             |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Smoother GL & hide cursor | Add to `~/.bashrc`:<br>`export KIVY_GL_BACKEND=sdl2`<br>`export KIVY_WINDOW=sdl2`                                          |
+| Auto‑start on boot        | Create a systemd service pointing to `ExecStart=/home/pi/aiweather/iwa-venv/bin/python /home/pi/aiweather/UI/main.py`      |
+| Clean rebuild             | `rm -rf iwa-venv && ./setup.sh`                                                                                            |
 
 ---
 
 ## 🤕 Troubleshooting
 
-| Symptom                                 | Likely cause                         | Fix                                                                          |
-| --------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| `ModuleNotFoundError: '_ffi'`           | Forgot to run the `apt install` part | Rerun `./setup.sh` (it will trigger the apt block).                          |
-| Window opens then crashes with GL error | Old Pi OS driver                     | Enable the FKMS driver in `sudo raspi-config` or set `KIVY_GL_BACKEND=sdl2`. |
-| `ImportError: libvlc.so.5`              | VLC dev lib missing                  | `sudo apt install libvlc-dev` (already in script).                           |
+| Symptom                                   | Likely cause                         | Fix                                                                          |
+| ----------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
+| `ModuleNotFoundError: '_ffi'`             | Forgot to run the `apt install` part | Rerun `./setup.sh` (it will trigger the apt block).                          |
+| Window opens then crashes with GL error   | Old Pi OS driver                     | Enable the FKMS driver in `sudo raspi-config` or set `KIVY_GL_BACKEND=sdl2`. |
+| `ImportError: libvlc.so.5`                | VLC dev lib missing                  | `sudo apt install libvlc-dev` (already in script).                           |
 
 ---
 
