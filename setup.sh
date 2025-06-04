@@ -90,4 +90,4 @@ echo "   export KIVY_WINDOW=sdl2"
 echo
 
 echo "✅ Setup complete!  Run:"
-echo "   source iwa-venv/bin/activate && python main.py"
+echo "   source iwa-venv/bin/activate && python UI/main.py"
