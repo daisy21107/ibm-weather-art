@@ -56,7 +56,7 @@ What *setup.sh* actually does:
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | **📦 System libs** | `sudo apt update && sudo apt install …` pulls SDL2, GStreamer, libVLC, OpenGL ES headers—the C libraries Kivy & VLC need. |
 | **🐍 Virtual‑env** | Creates `iwa-venv/` using `python -m venv`, then upgrades `pip setuptools wheel`.                                         |
-| **🔌 Python deps** | Installs `torch==2.3.0+cpu` first (quickest on ARM) and the rest of `requirements.txt`.                                   |
+| **🔌 Python deps** | Installs `torch==2.3.0` first (quickest on ARM) and the rest of `requirements.txt`.                                   |
 | **🔑 Secrets**     | Generates a blank `.env` with placeholders for API keys. Edit it before running the app!                                  |
 | **📂 Folders**     | Ensures an empty `data/` directory exists, plus redirects all package caches into `./.cache/`.                            |
 
