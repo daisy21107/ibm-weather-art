@@ -81,8 +81,8 @@ WATSONX_AI_URL=
 WATSONX_API_KEY=
 WATSONX_PROJECT_ID=
 WATSONX_MODEL_ID=
-OPENWEATHER_API_KEY=
-GUARDIAN_API_KEY=
+OPENWEATHER_KEY=
+GUARDIAN_KEY=
 EOF
   echo "→ UI/.env created — fill in your keys before running the app."
 else
