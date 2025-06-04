@@ -3,10 +3,10 @@ kivy==2.3.0
 requests==2.32.3
 python-dotenv==1.1.0        # provides the import name “dotenv”
 pillow==10.3.0
-beautifulsoup4==4.13.4
+beautifulsoup4==4.13.0
 
 # ─── Media & system plumbing ─────────────────────────────────────
-yt-dlp==2025.6.1
+yt-dlp==2025.6.1.232947.dev0
 python-vlc==3.0.20123
 
 # ─── NLP / BERT inference ─────────────────────────────────────────
