@@ -15,9 +15,7 @@
             size_hint_y: None
             height: self.minimum_height
             spacing: dp(20)
-            # ─── 把以下行的底部 padding 从 dp(15) 改为 dp(75) ────────────────
             padding: dp(15), dp(15), dp(15), dp(75)
-            # (左=15，顶=15，右=15，底=75)
 
             # ─── Row 1 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Request TextInput
@@ -127,7 +125,7 @@
                     height: self.texture_size[1]
                     text_size: self.width, self.height
 
-            # Col 2: News‐row buttons (两按钮叠加，各 88 dp + 4 dp 间距 = 180 dp)
+            # Col 2: News‐row buttons 
             BoxLayout:
                 orientation: "vertical"
                 size_hint_x: None
@@ -173,7 +171,7 @@
                     height: dp(90)
                     text_size: self.width, self.height
 
-            # Col 2: Music controls (四个按钮)
+            # Col 2: Music controls
             BoxLayout:
                 id: music_controls
                 spacing: dp(4)
