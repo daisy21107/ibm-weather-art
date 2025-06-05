@@ -1,156 +1,249 @@
 #:import dp kivy.metrics.dp
+#:set EMOJI_BIG  40    # Icon size aligned with 20sp body text
+#:set EMOJI_BTN  26    # Icon size aligned with 20sp body text
 
 <MainUI>:
     orientation: "vertical"
-    padding: dp(15)
-    spacing: dp(12)
 
-    GridLayout:
-        cols: 2
-        size_hint_y: None
-        height: self.minimum_height
-        row_force_default: True
-        row_default_height: dp(90)
-        spacing: dp(20)
+    ScrollView:
+        do_scroll_x: False
+        do_scroll_y: True
 
-        # ───────── 1 · WEATHER ─────────
-        BoxLayout:
-            spacing: dp(8)
-            Label:
-                id: weather_icon
-                font_name: "Emoji"
-                text: ""
-                font_size: "40sp"
-                size_hint_x: None
-                width: self.texture_size[0]
-            Label:
-                id: weather_label
-                text: "—"
+        GridLayout:
+            id: main_grid
+            cols: 2
+            size_hint_y: None
+            height: self.minimum_height
+            spacing: dp(20)
+            # ─── 把以下行的底部 padding 从 dp(15) 改为 dp(75) ────────────────
+            padding: dp(15), dp(15), dp(15), dp(75)
+            # (左=15，顶=15，右=15，底=75)
+
+            # ─── Row 1 (90 dp) ─────────────────────────────────────────────────────
+            # Col 1: Request TextInput
+            TextInput:
+                id: request_input
                 font_name: "UI"
-                markup: True
-                halign: "left"
-                valign: "middle"
-                text_size: self.width, None
-        Button:
-            text: "Request"
-            size_hint_x: None
-            width: dp(180)
-            on_release: root.toggle_request_bar()
+                font_size: "20sp"
+                multiline: False
+                write_tab: False
+                hint_text: "Type a request..."
+                size_hint_y: None
+                height: dp(90)
+                unfocus_on_touch: False
+                on_text_validate: app.process_request()
+                on_touch_down:
+                    if self.collide_point(*args[1].pos): self.focus = True
 
-        # ───────── 2 · NEWS ─────────
-        Label:
-            id: news_label
-            text: "—"
-            font_name: "UI"
-            markup: True
-            halign: "left"
-            valign: "middle"
-            text_size: self.width, None
-        Button:
-            text: "Refresh news"
-            size_hint_x: None
-            width: dp(180)
-            on_release: app.refresh_news()
-
-        # ───────── 3 · MUSIC ─────────
-        BoxLayout:
-            spacing: dp(8)
-            Label:
-                id: music_icon
-                font_name: "Emoji"
-                text: ""
-                font_size: "34sp"
+            # Col 2: Send button
+            Button:
+                text: "Send"
+                font_size: "20sp"
                 size_hint_x: None
-                width: self.texture_size[0]
-            Label:
-                id: music_label
-                text: "—"
-                font_name: "UI"
-                halign: "left"
-                valign: "middle"
-                text_size: self.width, None
-        BoxLayout:
-            id: music_controls
-            spacing: dp(4)
-            size_hint_x: None
-            width: dp(180)
-            Button:
-                id: btn_back
-                font_name: "Emoji"
-                text: "⏮️"
-                font_size: "3sp"
-                on_release: app.music_back()
-            Button:
-                id: btn_play
-                font_name: "Emoji"
-                text: "▶️"
-                font_size: "3sp"
-                on_release: app.music_play_pause()
-            Button:
-                id: btn_fwd
-                font_name: "Emoji"
-                text: "⏭️"
-                font_size: "3sp"
-                on_release: app.music_forward()
-            Button:
-                id: btn_stop
-                font_name: "Emoji"
-                text: "⏹️"
-                font_size: "3sp"
-                on_release: app.music_stop()
+                width: dp(180)
+                size_hint_y: None
+                height: dp(90)
+                on_release: app.process_request()
 
-        # ───────── 4 · REMINDERS ─────────
-        BoxLayout:
-            orientation: 'horizontal'
-            spacing: dp(8)
-            Label:
-                id: reminder_icon
-                text: "📝"
-                font_name: "Emoji"
-                font_size: "34sp"
+            # ─── Row 2 (90 dp) ─────────────────────────────────────────────────────
+            # Col 1: Weather icon + label
+            BoxLayout:
+                spacing: dp(8)
+                size_hint_y: None
+                height: dp(90)
+                Label:
+                    id: weather_icon
+                    font_name: "Emoji"
+                    text: ""
+                    font_size: EMOJI_BIG
+                    size_hint_x: None
+                    width: self.texture_size[0]
+                Label:
+                    id: weather_label
+                    text: "—"
+                    font_name: "UI"
+                    font_size: "20sp"
+                    markup: True
+                    halign: "left"
+                    valign: "middle"
+                    size_hint_y: None
+                    height: dp(90)
+                    text_size: self.width, self.height
+
+            # Col 2: Inert “Request” button
+            Button:
+                text: "Request"
+                font_size: "20sp"
                 size_hint_x: None
-                width: self.texture_size[0]
-            Label:
-                id: reminder_summary
-                text: "—"
-                font_name: "UI"
-                font_size: "13sp"
-                halign: "left"
-                valign: "middle"
-                text_size: self.width, None
-        BoxLayout:
-            id: reminders_controls
-            spacing: dp(4)
-            size_hint_x: None
-            width: dp(180)
-            Button:
-                id: btn_open_rem
-                text: "Open Reminders"
-                font_size: "12sp"
-                on_release: app.open_reminder_popup()
-            Button:
-                id: btn_add_rem
-                text: "Add Reminders"
-                font_size: "12sp"
-                on_release: app.open_add_reminder_popup()
+                width: dp(180)
+                size_hint_y: None
+                height: dp(90)
+                on_release: None
 
-    # ───────── REQUEST BAR ─────────
-    BoxLayout:
-        id: request_bar
-        size_hint_y: None
-        height: 0
-        opacity: 0
-        spacing: dp(8)
+            # ─── Row 3 (double‐height = 180 dp) ─────────────────────────────────────
+            # Col 1: News container (title + preview + footer)
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_x: 1
+                size_hint_y: None
+                height: dp(180)
+                spacing: dp(4)
 
-        TextInput:
-            id: request_input
-            font_name: "UI"
-            multiline: False
-            write_tab: False
-            hint_text: "Type a request..."
-            on_text_validate: app.process_request()
-        Button:
-            text: "Send"
-            size_hint_x: None
-            width: dp(100)
-            on_release: app.process_request()
+                # 1) Headline (24 sp, bold)
+                Label:
+                    id: news_title
+                    text: "—"
+                    font_name: "UI"
+                    font_size: "24sp"
+                    bold: True
+                    halign: "left"
+                    valign: "top"
+                    size_hint_y: None
+                    text_size: self.width, None
+                    height: self.texture_size[1]
+                    on_ref_press: app.open_article(*args)
+
+                # 2) Preview snippet (20 sp)
+                Label:
+                    id: news_preview
+                    text: "—"
+                    font_name: "UI"
+                    font_size: "20sp"
+                    halign: "left"
+                    valign: "top"
+                    size_hint_y: None
+                    text_size: self.width, None
+                    height: self.texture_size[1]
+
+                # 3) Footer (“via The Guardian · YYYY-MM-DD”, 18 sp)
+                Label:
+                    id: news_footer
+                    text: ""
+                    font_name: "UI"
+                    font_size: "18sp"
+                    halign: "left"
+                    valign: "middle"
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    text_size: self.width, self.height
+
+            # Col 2: News‐row buttons (两按钮叠加，各 88 dp + 4 dp 间距 = 180 dp)
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_x: None
+                width: dp(180)
+                size_hint_y: None
+                height: dp(180)
+                spacing: dp(4)
+
+                Button:
+                    text: "Refresh news"
+                    font_size: "20sp"
+                    size_hint_y: None
+                    height: dp(88)
+                    on_release: app.refresh_news()
+                Button:
+                    text: "Read news"
+                    font_size: "20sp"
+                    size_hint_y: None
+                    height: dp(88)
+                    on_release: None
+
+            # ─── Row 4 (90 dp) ─────────────────────────────────────────────────────
+            # Col 1: Music icon + label
+            BoxLayout:
+                spacing: dp(8)
+                size_hint_y: None
+                height: dp(90)
+                Label:
+                    id: music_icon
+                    font_name: "FA"
+                    text: u"\uf001"
+                    font_size: EMOJI_BIG
+                    size_hint_x: None
+                    width: self.texture_size[0]
+                Label:
+                    id: music_label
+                    text: "—"
+                    font_name: "UI"
+                    halign: "left"
+                    valign: "middle"
+                    font_size: "20sp"
+                    size_hint_y: None
+                    height: dp(90)
+                    text_size: self.width, self.height
+
+            # Col 2: Music controls (四个按钮)
+            BoxLayout:
+                id: music_controls
+                spacing: dp(4)
+                size_hint_x: None
+                width: dp(180)
+                size_hint_y: None
+                height: dp(90)
+                Button:
+                    id: btn_back
+                    font_name: "FA"
+                    text: u"\uf04a"
+                    font_size: EMOJI_BTN
+                    on_release: app.music_back()
+                Button:
+                    id: btn_play
+                    font_name: "FA"
+                    text: u"\uf04b"
+                    font_size: EMOJI_BTN
+                    on_release: app.music_play_pause()
+                Button:
+                    id: btn_forward
+                    font_name: "FA"
+                    text: u"\uf04e"
+                    font_size: EMOJI_BTN
+                    on_release: app.music_forward()
+                Button:
+                    id: btn_stop
+                    font_name: "FA"
+                    text: u"\uf04d"
+                    font_size: EMOJI_BTN
+                    on_release: app.music_stop()
+
+            # ─── Row 5 (90 dp) ─────────────────────────────────────────────────────
+            # Col 1: Reminder icon + summary
+            BoxLayout:
+                orientation: "horizontal"
+                spacing: dp(8)
+                size_hint_y: None
+                height: dp(90)
+                Label:
+                    id: reminder_icon
+                    font_name: "FA"
+                    text: u"\uf044"
+                    font_size: EMOJI_BIG
+                    size_hint_x: None
+                    width: self.texture_size[0]
+                Label:
+                    id: reminder_summary
+                    text: "—"
+                    font_name: "UI"
+                    font_size: "20sp"
+                    halign: "left"
+                    valign: "middle"
+                    size_hint_y: None
+                    height: dp(90)
+                    text_size: self.width, self.height
+
+            # Col 2: Reminder buttons
+            BoxLayout:
+                id: reminders_controls
+                spacing: dp(4)
+                size_hint_x: None
+                width: dp(180)
+                size_hint_y: None
+                height: dp(90)
+                Button:
+                    text: "Open"
+                    font_size: "20sp"
+                    on_release: app.open_reminder_popup()
+                Button:
+                    text: "Add"
+                    font_size: "20sp"
+                    on_release: app.open_add_reminder_popup()
