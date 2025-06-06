@@ -3,6 +3,16 @@
 #:set EMOJI_BTN  26    # Icon size aligned with 20sp body text
 
 <MainUI>:
+    canvas.before:
+        Color:
+            rgba: 1, 1, 1, 1  # white
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    orientation: "vertical"
+    padding: dp(15)
+    spacing: dp(12)
+
     orientation: "vertical"
 
     ScrollView:
@@ -32,6 +42,7 @@
                 on_text_validate: app.process_request()
                 on_touch_down:
                     if self.collide_point(*args[1].pos): self.focus = True
+                color: 0, 0, 0, 1  # black text
 
             # Col 2: Send button
             Button:
@@ -42,6 +53,7 @@
                 size_hint_y: None
                 height: dp(90)
                 on_release: app.process_request()
+                color: 0, 0, 0, 1  # black text
 
             # ─── Row 2 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Weather icon + label
@@ -56,6 +68,7 @@
                     font_size: EMOJI_BIG
                     size_hint_x: None
                     width: self.texture_size[0]
+                    color: 0, 0, 0, 1  # black text
                 Label:
                     id: weather_label
                     text: "—"
@@ -67,6 +80,7 @@
                     size_hint_y: None
                     height: dp(90)
                     text_size: self.width, self.height
+                    color: 0, 0, 0, 1  # black text
 
             # Col 2: Inert “Request” button
             Button:
@@ -77,6 +91,7 @@
                 size_hint_y: None
                 height: dp(90)
                 on_release: None
+                color: 0, 0, 0, 1  # black text
 
             # ─── Row 3 (double‐height = 180 dp) ─────────────────────────────────────
             # Col 1: News container (title + preview + footer)
@@ -86,6 +101,7 @@
                 size_hint_y: None
                 height: dp(180)
                 spacing: dp(4)
+                color: 0, 0, 0, 1  # black text
 
                 # 1) Headline (24 sp, bold)
                 Label:
@@ -100,6 +116,7 @@
                     text_size: self.width, None
                     height: self.texture_size[1]
                     on_ref_press: app.open_article(*args)
+                    color: 0, 0, 0, 1  # black text
 
                 # 2) Preview snippet (20 sp)
                 Label:
@@ -112,6 +129,7 @@
                     size_hint_y: None
                     text_size: self.width, None
                     height: self.texture_size[1]
+                    color: 0, 0, 0, 1  # black text
 
                 # 3) Footer (“via The Guardian · YYYY-MM-DD”, 18 sp)
                 Label:
@@ -124,6 +142,7 @@
                     size_hint_y: None
                     height: self.texture_size[1]
                     text_size: self.width, self.height
+                    color: 0, 0, 0, 1  # black text
 
             # Col 2: News‐row buttons 
             BoxLayout:
@@ -133,18 +152,21 @@
                 size_hint_y: None
                 height: dp(180)
                 spacing: dp(4)
+                color: 0, 0, 0, 1  # black text
 
                 Button:
                     text: "Refresh news"
                     font_size: "20sp"
                     size_hint_y: None
                     height: dp(88)
+                    color: 0, 0, 0, 1  # black text
                     on_release: app.refresh_news()
                 Button:
                     text: "Read news"
                     font_size: "20sp"
                     size_hint_y: None
                     height: dp(88)
+                    color: 0, 0, 0, 1  # black text
                     on_release: None
 
             # ─── Row 4 (90 dp) ─────────────────────────────────────────────────────
@@ -160,6 +182,7 @@
                     font_size: EMOJI_BIG
                     size_hint_x: None
                     width: self.texture_size[0]
+                    color: 0, 0, 0, 1  # black text
                 Label:
                     id: music_label
                     text: "—"
@@ -170,6 +193,7 @@
                     size_hint_y: None
                     height: dp(90)
                     text_size: self.width, self.height
+                    color: 0, 0, 0, 1  # black text
 
             # Col 2: Music controls
             BoxLayout:
@@ -185,24 +209,28 @@
                     text: u"\uf04a"
                     font_size: EMOJI_BTN
                     on_release: app.music_back()
+                    color: 0, 0, 0, 1  # black text
                 Button:
                     id: btn_play
                     font_name: "FA"
                     text: u"\uf04b"
                     font_size: EMOJI_BTN
                     on_release: app.music_play_pause()
+                    color: 0, 0, 0, 1  # black text
                 Button:
                     id: btn_forward
                     font_name: "FA"
                     text: u"\uf04e"
                     font_size: EMOJI_BTN
                     on_release: app.music_forward()
+                    color: 0, 0, 0, 1  # black text
                 Button:
                     id: btn_stop
                     font_name: "FA"
                     text: u"\uf04d"
                     font_size: EMOJI_BTN
                     on_release: app.music_stop()
+                    color: 0, 0, 0, 1  # black text
 
             # ─── Row 5 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Reminder icon + summary
@@ -218,6 +246,7 @@
                     font_size: EMOJI_BIG
                     size_hint_x: None
                     width: self.texture_size[0]
+                    color: 0, 0, 0, 1  # black text
                 Label:
                     id: reminder_summary
                     text: "—"
@@ -228,6 +257,7 @@
                     size_hint_y: None
                     height: dp(90)
                     text_size: self.width, self.height
+                    color: 0, 0, 0, 1  # black text
 
             # Col 2: Reminder buttons
             BoxLayout:
@@ -241,7 +271,9 @@
                     text: "Open"
                     font_size: "20sp"
                     on_release: app.open_reminder_popup()
+                    color: 0, 0, 0, 1  # black text
                 Button:
                     text: "Add"
                     font_size: "20sp"
                     on_release: app.open_add_reminder_popup()
+                    color: 0, 0, 0, 1  # black text
