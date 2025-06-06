@@ -73,12 +73,9 @@ WATSONX_AI_URL=https://...-api.ai.cloud.ibm.com
 WATSONX_API_KEY=************************
 WATSONX_PROJECT_ID=xxxxxxxx-xxxx…
 WATSONX_MODEL_ID=google/flan-t5-xl
-OPENWEATHER_API_KEY=************************
-GUARDIAN_API_KEY=************************
+OPENWEATHER_KEY=************************
+GUARDIAN_KEY=************************
 ```
-
-Save the file—`python-dotenv` will load it automatically at runtime.
-
 ---
 
 ## ▶️ How to run (daily use)
