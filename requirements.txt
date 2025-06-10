@@ -10,7 +10,7 @@ yt-dlp==2025.6.1.232947.dev0
 python-vlc==3.0.20123
 
 # ─── NLP / BERT inference ─────────────────────────────────────────
-torch==2.3.0+cpu
+torch==2.3.0
 transformers==4.44.0
 sentencepiece==0.2.0
 accelerate==0.29.2

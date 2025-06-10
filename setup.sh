@@ -71,8 +71,12 @@ WATSONX_AI_URL=
 WATSONX_API_KEY=
 WATSONX_PROJECT_ID=
 WATSONX_MODEL_ID=
-OPENWEATHER_API_KEY=
-GUARDIAN_API_KEY=
+OPENWEATHER_KEY=
+GUARDIAN_KEY=
+IBM_STT_APIKEY=
+IBM_STT_URL=
+IBM_TTS_APIKEY=
+IBM_TTS_URL=
 EOF
   echo "→ .env created — fill in your keys before running the app."
 else
@@ -117,4 +121,4 @@ echo "   export KIVY_WINDOW=sdl2"
 echo
 
 echo "✅ Setup complete!  Run:"
-echo "   source iwa-venv/bin/activate && python main.py"
+echo "   source iwa-venv/bin/activate && python UI/main.py"

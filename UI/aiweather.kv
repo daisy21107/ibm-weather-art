@@ -13,8 +13,6 @@
     padding: dp(15)
     spacing: dp(12)
 
-    orientation: "vertical"
-
     ScrollView:
         do_scroll_x: False
         do_scroll_y: True
@@ -53,7 +51,7 @@
                 size_hint_y: None
                 height: dp(90)
                 on_release: app.process_request()
-                color: 0, 0, 0, 1  # black text
+                color: 1, 1, 1, 1
 
             # ─── Row 2 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Weather icon + label
@@ -82,16 +80,19 @@
                     text_size: self.width, self.height
                     color: 0, 0, 0, 1  # black text
 
-            # Col 2: Inert “Request” button
+            # Col 2: Speech "Request" button linked
             Button:
-                text: "Request"
-                font_size: "20sp"
+                id: btn_request
+                text: u"\U0001F399"
+                font_name: "Emoji"
+                font_size: "40sp"
                 size_hint_x: None
                 width: dp(180)
                 size_hint_y: None
                 height: dp(90)
-                on_release: None
-                color: 0, 0, 0, 1  # black text
+                on_press: app.start_record()
+                on_release: app.stop_record()
+                color: 1, 1, 1, 1  # black text
 
             # ─── Row 3 (double‐height = 180 dp) ─────────────────────────────────────
             # Col 1: News container (title + preview + footer)
@@ -131,7 +132,7 @@
                     height: self.texture_size[1]
                     color: 0, 0, 0, 1  # black text
 
-                # 3) Footer (“via The Guardian · YYYY-MM-DD”, 18 sp)
+                # 3) Footer ("via The Guardian · YYYY-MM-DD", 18 sp)
                 Label:
                     id: news_footer
                     text: ""
@@ -152,22 +153,20 @@
                 size_hint_y: None
                 height: dp(180)
                 spacing: dp(4)
-                color: 0, 0, 0, 1  # black text
+                color: 1, 1, 1, 1  # black text
 
                 Button:
                     text: "Refresh news"
                     font_size: "20sp"
                     size_hint_y: None
                     height: dp(88)
-                    color: 0, 0, 0, 1  # black text
                     on_release: app.refresh_news()
                 Button:
                     text: "Read news"
                     font_size: "20sp"
                     size_hint_y: None
                     height: dp(88)
-                    color: 0, 0, 0, 1  # black text
-                    on_release: None
+                    on_release: app.read_news_aloud()
 
             # ─── Row 4 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Music icon + label
@@ -209,28 +208,28 @@
                     text: u"\uf04a"
                     font_size: EMOJI_BTN
                     on_release: app.music_back()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1
                 Button:
                     id: btn_play
                     font_name: "FA"
                     text: u"\uf04b"
                     font_size: EMOJI_BTN
                     on_release: app.music_play_pause()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1
                 Button:
                     id: btn_forward
                     font_name: "FA"
                     text: u"\uf04e"
                     font_size: EMOJI_BTN
                     on_release: app.music_forward()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1
                 Button:
                     id: btn_stop
                     font_name: "FA"
                     text: u"\uf04d"
                     font_size: EMOJI_BTN
                     on_release: app.music_stop()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1
 
             # ─── Row 5 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Reminder icon + summary
@@ -271,9 +270,9 @@
                     text: "Open"
                     font_size: "20sp"
                     on_release: app.open_reminder_popup()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1
                 Button:
                     text: "Add"
                     font_size: "20sp"
                     on_release: app.open_add_reminder_popup()
-                    color: 0, 0, 0, 1  # black text
+                    color: 1, 1, 1, 1

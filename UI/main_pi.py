@@ -13,6 +13,10 @@ from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+import threading
+import subprocess
+import wave
+import uuid
 
 import requests
 from requests.exceptions import RequestException
@@ -26,8 +30,7 @@ except ModuleNotFoundError:
 from kivy.config import Config
 Config.set("graphics", "width",  "800")
 Config.set("graphics", "height", "480")
-Config.set('graphics', 'show_cursor', '1')
-
+Config.set('graphics', 'show_cursor', '0')
 
 from kivy.resources import resource_add_path
 from kivy.core.text import LabelBase
@@ -47,16 +50,47 @@ from kivy.animation import Animation
 
 from BERT import infer as nlu_infer
 
+# ─── load .env ───────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).with_name(".env"))
 except ImportError:
     pass
 
-# Thread pool
+# ─── IBM Watson helpers ──────────────────────────────────────
+from stt import transcribe_audio_ibm
+from tts import text_to_speech_ibm
+
+# ─── audio I/O setup ─────────────────────────────────────────
+import pyaudio
+
+RATE, FORMAT, CHUNK = 44100, pyaudio.paInt16, 1024
+CARD_IN, CARD_OUT = "hw:1,0", "default"
+
+def record_to_wav(path: str, seconds: int = 60) -> None:
+    pa = pyaudio.PyAudio()
+    stream = pa.open(format=FORMAT, channels=1, rate=RATE,
+                     input=True, input_device_index=None,
+                     frames_per_buffer=CHUNK)
+    frames = [stream.read(CHUNK, exception_on_overflow=False)
+              for _ in range(int(RATE / CHUNK * seconds))]
+    stream.stop_stream()
+    stream.close()
+    pa.terminate()
+    with wave.open(path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(pa.get_sample_size(FORMAT))
+        wf.setframerate(RATE)
+        wf.writeframes(b"".join(frames))
+
+def play_wav(path: str) -> None:
+    subprocess.call(["aplay", "-D", CARD_OUT, path],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+# ─── threading pool ───────────────────────────────────────────
 EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
-# Logging setup
+# ─── logging setup ────────────────────────────────────────────
 log_dir = Path.home() / "aiweather"
 log_dir.mkdir(exist_ok=True)
 logger = logging.getLogger("nlu")
@@ -75,7 +109,12 @@ if not csv_path.exists():
     with csv_path.open("w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow(["timestamp", "raw_text", "intent", "slots_json"])
 
-# yt_dlp logger
+def _append_csv(ts, raw, intent, slots):
+    with csv_path.open("a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([ts, raw, intent,
+                                json.dumps(slots, ensure_ascii=False)])
+
+# ─── yt_dlp logger ────────────────────────────────────────────
 ydl_logger = logging.getLogger("yt_dlp")
 ydl_handler = logging.StreamHandler()
 ydl_formatter = logging.Formatter("[yt_dlp] %(message)s")
@@ -83,27 +122,15 @@ ydl_handler.setFormatter(ydl_formatter)
 ydl_logger.addHandler(ydl_handler)
 ydl_logger.setLevel(logging.WARNING)
 
-def _append_csv(ts, raw, intent, slots):
-    with csv_path.open("a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow([ts, raw, intent,
-                                json.dumps(slots, ensure_ascii=False)])
-
-# Register fonts
+# ─── font registration ─────────────────────────────────────────
 def _register_emoji_font() -> None:
     fonts_dir = Path(__file__).with_name("fonts")
     noto_sym = fonts_dir / "NotoSansSymbols2-Regular.ttf"
     if noto_sym.exists():
         LabelBase.register(name="Emoji", fn_regular=str(noto_sym))
-        print(f"✅ Emoji glyphs → {noto_sym.name}")
-    else:
-        print("⚠️  NotoSansSymbols2-Regular.ttf missing – basic icons blank")
-
     fa_solid = fonts_dir / "fa-solid-900.ttf"
     if fa_solid.exists():
         LabelBase.register(name="FA", fn_regular=str(fa_solid))
-        print(f"✅ FA icons      → {fa_solid.name}")
-    else:
-        print("⚠️  fa-solid-900.ttf missing – 🎵 🤖 🔍 icons blank")
 
 def _install_global_unicode_font() -> None:
     search = [
@@ -122,9 +149,7 @@ def _install_global_unicode_font() -> None:
             resource_add_path(str(Path(p).parent))
             LabelBase.register(name="Roboto", fn_regular=str(Path(p)))
             LabelBase.register(name="UI",     fn_regular=str(Path(p)))
-            print(f"✓ Unicode font installed: {Path(p).name}")
             return
-    print("⚠️  No wide-Unicode font found; non-Latin glyphs may show □")
 
 _register_emoji_font()
 _install_global_unicode_font()
@@ -217,6 +242,8 @@ class MainUI(BoxLayout):
         self.ids.news_footer.text = ""
 
 class AIWeatherApp(App):
+    tmp_rec = Path("/tmp") / "speech_tmp.wav"
+    
     def build(self):
         self.reminder_manager = ReminderManager()
         self.news_api      = GuardianNewsAPI()
@@ -337,6 +364,54 @@ class AIWeatherApp(App):
     def open_article(self, instance, url):
         webbrowser.open(url)
 
+ # ── Speech capture ───────────────────────────────────────────
+    def start_record(self):
+        """Begin recording on button press."""
+        self.root.ids.btn_request.text = "🎙"
+        self._rec_started = datetime.now()
+        self._rec_thr = threading.Thread(
+            target=record_to_wav,
+            args=(str(self.tmp_rec), 60),
+            daemon=True)
+        self._rec_thr.start()
+
+    def stop_record(self):
+        """Stop recording on button release and kick off STT."""
+        dur = (datetime.now() - self._rec_started).total_seconds()
+        if dur < 0.3:
+            self.root.ids.btn_request.text = "Request"
+            return
+        self.root.ids.btn_request.text = "⌛"
+        EXECUTOR.submit(transcribe_audio_ibm, str(self.tmp_rec))\
+                .add_done_callback(self._after_stt)
+
+    def _after_stt(self, fut):
+        try:
+            spoken = fut.result().strip()
+        except Exception as e:
+            logging.exception(e)
+            spoken = ""
+        def _ui(_):
+            self.root.ids.btn_request.text = "Request"
+            if spoken:
+                self.root.ids.request_input.text = spoken
+                self.process_request()
+        Clock.schedule_once(_ui)
+
+    # ── Read-news TTS ────────────────────────────────────────────
+    def read_news_aloud(self):
+        title   = self.root.ids.news_title.text
+        preview = self.root.ids.news_preview.text
+        spoken  = f"{title}. {preview}".strip("— ").strip()
+        if not spoken:
+            return
+        out = Path("/tmp") / f"news_{uuid.uuid4().hex}.wav"
+        def _do_tts():
+            text_to_speech_ibm(spoken, str(out))
+            return out
+        EXECUTOR.submit(_do_tts)\
+                .add_done_callback(lambda fut: play_wav(str(fut.result())))
+        
     # ─── NLU routing ────────────────────────────────────────────────────────────
     def process_request(self, *_):
         t = self.root.ids.request_input.text.strip()
