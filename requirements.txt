@@ -8,6 +8,7 @@ beautifulsoup4==4.13.0
 # ─── Media & system plumbing ─────────────────────────────────────
 yt-dlp==2025.6.1.232947.dev0
 python-vlc==3.0.20123
+pyaudio==0.2.14
 
 # ─── NLP / BERT inference ─────────────────────────────────────────
 torch==2.3.0
