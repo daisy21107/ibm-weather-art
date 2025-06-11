@@ -31,7 +31,8 @@
                 id: request_input
                 font_name: "UI"
                 font_size: "20sp"
-                multiline: False
+                multiline: True
+                scroll_x: 0
                 write_tab: False
                 hint_text: "Type a request..."
                 size_hint_y: None
@@ -272,7 +273,7 @@
                     on_release: app.open_reminder_popup()
                     color: 1, 1, 1, 1
                 Button:
-                    text: "Add"
+                    text: "Edit"
                     font_size: "20sp"
                     on_release: app.open_add_reminder_popup()
                     color: 1, 1, 1, 1
