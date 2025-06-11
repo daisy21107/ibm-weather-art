@@ -1,23 +1,16 @@
 #!/usr/bin/env bash
 # ----------------------------------------------------------------------
-# setup.sh  –  one-shot project bootstrap for Raspberry Pi (64-bit OS)
-#
-#  • Installs system libraries the very first time (sudo password needed)
-#  • Creates / reuses a Python venv called “iwa-venv”
-#  • Installs all Python packages from requirements.txt
-#  • Redirects pip / HF / PyTorch / yt-dlp caches into ./.cache/
-#  • Generates a skeleton .env file on first run
-#  • Ensures a data/ directory exists
-#  • Downloads the two emoji/icon fonts into UI/fonts if missing
+# setup.sh – one-shot project bootstrap for Raspberry Pi (64-bit OS)
 # ----------------------------------------------------------------------
 set -euo pipefail
 
-# -------- 0) system-wide C/C++ libraries (one-time) -------------------
-if ! dpkg -s libvlc-dev >/dev/null 2>&1; then
+# -------- 0) system-wide C/C++ libraries (one-time) ------------------
+if ! dpkg -s libvlc-dev portaudio19-dev >/dev/null 2>&1; then
   echo "🔧 Installing system libraries (sudo password may be required)…"
   sudo apt update
   sudo apt install -y python3-venv python3-dev build-essential \
        libffi-dev libssl-dev libvlc-dev \
+       portaudio19-dev libasound2-dev libportaudio2 libportaudiocpp0 \
        libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
        libgl1-mesa-dev libgles2-mesa-dev \
        libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
@@ -50,22 +43,19 @@ EOF
 fi
 # shellcheck disable=SC1091
 source "$ACTIVATE_POST"
-echo "🗂  Cache directories redirected into ./\.cache/*"
+echo "🗂  Cache directories redirected into ./.cache/*"
 
 # -------- 3) upgrade installer tools, then install deps --------------
 python -m pip install --upgrade pip setuptools wheel
-
-#  -- optional but faster: pull PyTorch wheel first -------------------
 pip install --no-cache-dir torch==2.3.0 \
   --index-url https://download.pytorch.org/whl/cpu
-  
-#  -- bulk-install everything else ------------------------------------
 pip install --no-cache-dir -r requirements.txt
 
-# -------- 4) scaffold .env with empty keys ---------------------------
-if [ ! -f .env ]; then
-  echo "🗝️  Creating .env file with API-key placeholders…"
-  cat <<'EOF' > .env
+# -------- 4) scaffold UI/.env with empty keys ------------------------
+mkdir -p UI                      # make sure the folder exists
+if [ ! -f UI/.env ]; then
+  echo "🗝️  Creating UI/.env file with API-key placeholders…"
+  cat <<'EOF' > UI/.env
 # ─── API / Secret keys ────────────────────────────────────────────────
 WATSONX_AI_URL=
 WATSONX_API_KEY=
@@ -78,20 +68,16 @@ IBM_STT_URL=
 IBM_TTS_APIKEY=
 IBM_TTS_URL=
 EOF
-  echo "→ .env created — fill in your keys before running the app."
+  echo "→ UI/.env created — fill in your keys before running the app."
 else
-  echo "✔︎ .env already exists — leaving it unchanged."
+  echo "✔︎ UI/.env already exists — leaving it unchanged."
 fi
 
 # -------- 5) make sure data/ folder is present -----------------------
 mkdir -p data/
 echo "📂 Ensured data/ directory exists."
 
-# -------- 6) ensure UI/fonts directory & download icon fonts --------
-# main.py expects:
-#   • 'UI/fonts/NotoSansSymbols2-Regular.ttf'  (icon glyphs)
-#   • 'UI/fonts/fa-solid-900.ttf'              (Font Awesome solid)
-# If missing, fetch from GitHub raw URLs.
+# -------- 6) ensure UI/fonts directory & download icon fonts ---------
 FONTS_DIR="UI/fonts"
 mkdir -p "$FONTS_DIR"
 
@@ -119,6 +105,5 @@ echo "👉 Tip: add these to ~/.bashrc if you run Kivy full-screen:"
 echo "   export KIVY_GL_BACKEND=sdl2"
 echo "   export KIVY_WINDOW=sdl2"
 echo
-
 echo "✅ Setup complete!  Run:"
 echo "   source iwa-venv/bin/activate && python UI/main.py"
