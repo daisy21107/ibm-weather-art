@@ -24,7 +24,6 @@ An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elde
 /home/pi/aiweather            # ← clone repo into this exact folder name
 ├── UI/                       # Kivy front‑end
 │   └── main.py               # application entry‑point
-├── BERT.py                   # lightweight BERT wrapper
 ├── requirements.txt          # python dependencies
 ├── setup.sh                  # one‑shot bootstrap script
 ├── data/                     # runtime downloads & cache
