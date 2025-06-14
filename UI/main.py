@@ -1,14 +1,9 @@
 # AIWeather – UI (weather • Guardian news • BERT NLU • YouTube music)
+# ------------------------------------------------------------------
+#  ⚠️  Pi-only version – tuned for Raspberry Pi 4B + 7" HDMI touchscreen
+# ------------------------------------------------------------------
 
-import os
-import webbrowser
-import html
-import re
-import csv
-import json
-import logging
-import platform
-import pyaudio
+import os, webbrowser, html, re, csv, json, logging, wave, uuid, tempfile, requests
 from logging.handlers import RotatingFileHandler
 from collections import defaultdict, deque
 from datetime import datetime
@@ -17,12 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import threading
 from threading import Event
-import wave
-import uuid
 from time import monotonic
-import tempfile
-import requests
-from requests.exceptions import RequestException
+import audioop
+import pyaudio
 import yt_dlp
 
 try:
@@ -33,7 +25,8 @@ except ModuleNotFoundError:
 from kivy.config import Config
 Config.set("graphics", "width",  "800")
 Config.set("graphics", "height", "480")
-Config.set('graphics', 'show_cursor', '1') #should change to 0 for pi
+Config.set('graphics', 'show_cursor', '0')
+Config.set('kivy', 'keyboard_mode', 'system')
 
 from kivy.resources import resource_add_path
 from kivy.core.text import LabelBase
@@ -47,95 +40,140 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
 from kivy.uix.textinput import TextInput
-from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.animation import Animation
+from requests.exceptions import RequestException
+from infer_onnx import infer_onnx as nlu_infer     # your BERT NLU
 
-from infer_onnx import infer_onnx as nlu_infer
-#from BERT import infer as nlu_infer
-
-# ─── load .env ───────────────────────────────────────────────
+# ─── .env loading ─────────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).with_name(".env"))
 except ImportError:
     pass
 
-# ─── IBM Watson helpers ──────────────────────────────────────
+# ─── IBM Watson helpers ───────────────────────────────────────────────────────
 from stt import transcribe_audio_ibm     # must read env vars
 from tts import text_to_speech_ibm       # must read env vars
 
-# ─── app-wide constants ────────────────────────────────────────────────
+# ─── constants ────────────────────────────────────────────────────────────────
 WEATHER_REFRESH_SEC    = 600      # 10 min
-NEWS_REFRESH_SEC       = 300      # 5  min
+NEWS_REFRESH_SEC       = 300      # 5 min
 MAX_REMINDERS_PER_SLOT = 3
-MAX_RECORD_SEC         = 60       # audio hard limit
+MAX_RECORD_SEC         = 60
 
-# ─── audio I/O setup ─────────────────────────────────────────
-RATE, FORMAT, CHUNK = 44100, pyaudio.paInt16, 1024
+# ─── Audio-device discovery (USB mic / speaker) ──────────────────────────────
+### PI MOD – find the first PyAudio device that contains "USB" in its name
+USB_KEYWORD = "usb audio"        # tweak if your devices use another name
+pa_enum     = pyaudio.PyAudio()
+
+def _find_device(keyword: str, *, want_input: bool):
+    """Return the first device index matching keyword & I/O direction."""
+    keyword = keyword.lower()
+    for idx in range(pa_enum.get_device_count()):
+        info = pa_enum.get_device_info_by_index(idx)
+        if want_input  and info.get("maxInputChannels", 0) == 0:  continue
+        if not want_input and info.get("maxOutputChannels", 0) == 0: continue
+        if keyword in info.get("name", "").lower():
+            return idx
+    return None   # let PyAudio pick default if not found
+
+USB_MIC_INDEX  = _find_device(USB_KEYWORD, want_input=True)
+USB_SPK_INDEX  = _find_device(USB_KEYWORD, want_input=False)
+
+print(f"[AUDIO] USB mic index: {USB_MIC_INDEX}")
+print(f"[AUDIO] USB speaker index: {USB_SPK_INDEX}")
+
+RATE, FORMAT, CHUNK = 16_000, pyaudio.paInt16, 1024   ### PI MOD – 16 kHz
 
 def record_to_wav(path: str, stop_evt: Event, max_sec: int = MAX_RECORD_SEC) -> None:
+    """Record from the USB mic into a WAV file until stop_evt is set."""
     try:
         pa = pyaudio.PyAudio()
         stream = pa.open(format=FORMAT,
                          channels=1,
                          rate=RATE,
                          input=True,
-                         frames_per_buffer=CHUNK)
-
+                         frames_per_buffer=CHUNK,
+                         input_device_index=USB_MIC_INDEX)   ### PI MOD
         frames, start = [], monotonic()
         while not stop_evt.is_set() and (monotonic() - start) < max_sec:
             data = stream.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
 
-        stream.stop_stream()
-        stream.close()
-        pa.terminate()
+        stream.stop_stream(); stream.close(); pa.terminate()
 
-        if frames:                          # write only if something captured
+        if frames:
             with wave.open(path, "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(pa.get_sample_size(FORMAT))
                 wf.setframerate(RATE)
                 wf.writeframes(b"".join(frames))
-            print("[DEBUG] Finished writing →", path)
+        print("[DEBUG] Finished writing →", path)
     except Exception:
         logging.exception("Failed to record audio")
 
-
 def play_wav(path: str):
+    """
+    Play a WAV file through the USB speaker.
+    If the file's sample-rate isn't 44 100 or 48 000 Hz, resample to 48 k.
+    """
     wf = wave.open(path, 'rb')
     pa = pyaudio.PyAudio()
-    stream = pa.open(format=pa.get_format_from_width(wf.getsampwidth()),
-                     channels=wf.getnchannels(),
-                     rate=wf.getframerate(),
-                     output=True)
-    data = wf.readframes(1024)
-    while data:
-        stream.write(data)
-        data = wf.readframes(1024)
+
+    raw_rate = wf.getframerate()
+    samp_w   = wf.getsampwidth()
+    nch      = wf.getnchannels()
+
+    # Acceptable hardware rates for almost every USB DAC
+    OK = (44100, 48000)
+
+    if raw_rate not in OK:
+        # ── on-the-fly upsample to 48 kHz using std-lib audioop ──────────
+        frames = wf.readframes(wf.getnframes())
+        frames, _ = audioop.ratecv(frames, samp_w, nch,
+                                   raw_rate, 48000, None)
+        raw_rate = 48000
+        wf.close()                  # we'll feed the bytes from memory
+        data_iter = (frames[i:i+1024] for i in range(0, len(frames), 1024))
+    else:
+        # ── stream straight from disk ────────────────────────────────────
+        data_iter = iter(lambda: wf.readframes(1024), b'')
+
+    try:
+        stream = pa.open(format=pa.get_format_from_width(samp_w),
+                         channels=nch,
+                         rate=raw_rate,
+                         output=True,
+                         output_device_index=USB_SPK_INDEX)
+    except OSError:
+        # fallback: let ALSA 'default' plug handle the conversion
+        stream = pa.open(format=pa.get_format_from_width(samp_w),
+                         channels=nch,
+                         rate=raw_rate,
+                         output=True)
+
+    for chunk in data_iter:
+        if not chunk:
+            break
+        stream.write(chunk)
+
     stream.stop_stream()
     stream.close()
     pa.terminate()
 
 
-# ─── threading pool ───────────────────────────────────────────
+# ─── Thread pool & logging (unchanged) ───────────────────────────────────────
 EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
-
-# ─── logging setup ────────────────────────────────────────────
-log_dir = Path.home() / "aiweather"
+log_dir  = Path.home() / "aiweather"
 log_dir.mkdir(exist_ok=True)
 logger = logging.getLogger("nlu")
 logger.setLevel(logging.INFO)
 fmt = logging.Formatter("[%(asctime)s] %(message)s")
-sh = logging.StreamHandler()
-sh.setFormatter(fmt)
-logger.addHandler(sh)
+sh = logging.StreamHandler(); sh.setFormatter(fmt); logger.addHandler(sh)
 fh = RotatingFileHandler(log_dir / "nlu.log", maxBytes=300_000,
                          backupCount=5, encoding="utf-8")
-fh.setFormatter(fmt)
-logger.addHandler(fh)
-
+fh.setFormatter(fmt); logger.addHandler(fh)
 csv_path = log_dir / "nlu_log.csv"
 if not csv_path.exists():
     with csv_path.open("w", newline="", encoding="utf-8") as f:

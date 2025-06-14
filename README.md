@@ -1,20 +1,35 @@
+
 # aiweather
 
-*Raspberry Pi 4 powered kiosk dashboard that mixes live weather, news, YouTube‑radio loops and IBM watsonx.ai text generation, all wrapped in a touch‑friendly Kivy UI.*
+*Raspberry Pi 4 powered kiosk dashboard that mixes live weather, news, YouTube-radio loops and IBM watsonx.ai text generation, all wrapped in a touch-friendly Kivy UI.*
 
 ---
 
-# IBM – 3D‑Printed AI Weather Art
+# IBM – 3D-Printed AI Weather Art
 
-An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elderly individuals living alone. The installation blends the software in *aiweather* with a physical sculpture, using IBM Watson Assistant for conversation, live weather forecasting, voice interaction, and personalised media suggestions.
+An AI-enabled, **3D-printed kinetic art** companion aimed at supporting elderly individuals living alone. The installation blends the software in *aiweather* with a physical sculpture, using IBM Watson Assistant for conversation, live weather forecasting, voice interaction, and personalised media suggestions.
 
 ## Project Objectives
 
-* Display live weather information in a **mechanical, artistic form**
-* Use **voice commands** to read and reply to text messages
-* Recommend and play **podcasts or music** suited to the user’s taste and mood
-* Read daily news and suggest **positive activities**
-* Make AI technology feel **friendly, familiar, and approachable**
+* Enable **multimodal interaction**  
+  * 🎤 **Mic button** → speech-to-text only (fills the search bar)  
+  * 🎙️ **Request** – feeds that text to NLU and can **fetch weather, pull topic-based news, start YouTube music, or add / cancel reminders**.  
+  * 🤖 **Ask AI**  → free-form advice from IBM Watson, spoken aloud  
+  * ⌨️ **Virtual keyboard** → typing fallback for all queries  
+* Read **daily news aloud**—swipe headlines with *Refresh News* or tap **Read News** to hear the current article.  
+* Let users **search, stream, and control music** from YouTube with large, touch-friendly buttons.  
+* Offer a **weekly reminder grid** that persists across shutdowns and auto-clears every Monday.  
+* Maintain an intuitive, emoji-rich interface that feels **friendly, familiar, and approachable**—especially for elderly users.
+
+---
+
+## 📦 Recommended hardware
+
+| Part | Tested model | Buy-link |
+|------|--------------|----------|
+| 7″ Touch display | Official Raspberry Pi 7-inch display | <https://uk.rs-online.com/web/p/raspberry-pi-screens/8997466?gb=s> |
+| USB microphone | Mini USB Microphone | <https://thepihut.com/products/mini-usb-microphone> |
+| USB speaker | Pi Hut Mini External USB Stereo Speaker | <https://thepihut.com/products/mini-external-usb-stereo-speaker?variant=31955934801> |
 
 ---
 
@@ -22,19 +37,17 @@ An AI‑enabled, **3D‑printed kinetic art** companion aimed at supporting elde
 
 ```text
 /home/pi/aiweather            # ← clone repo into this exact folder name
-├── UI/                       # Kivy front‑end
-│   └── main.py               # application entry‑point
+├── UI/                       # Kivy front-end
+│   └── main.py               # application entry-point
 ├── requirements.txt          # python dependencies
-├── setup.sh                  # one‑shot bootstrap script
+├── setup.sh                  # one-shot bootstrap script
 ├── data/                     # runtime downloads & cache
 └── …                         # other source files, assets, docs
 ```
 
-> **Why */home/pi/aiweather*?**  Cloning directly into that folder keeps everything self‑contained, making backups and SD‑card migrations dead‑simple.
-
 ---
 
-## 🚀 First‑time installation (fresh Pi)
+## 🚀 First-time installation (fresh Pi)
 
 ```bash
 # 1) grab the code
@@ -45,36 +58,29 @@ cd aiweather
 # 2) make the helper executable
 chmod +x setup.sh
 
-# 3) let the script do its thing (takes ~5–10 min on a Pi‑4)
+# 3) let the script do its thing (takes ~5–10 min on a Pi-4)
 ./setup.sh
 ```
-
-What *setup.sh* actually does:
-
-| Phase              | Actions                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| **📦 System libs** | `sudo apt update && sudo apt install …` pulls SDL2, GStreamer, libVLC, OpenGL ES headers—the C libraries Kivy & VLC need. |
-| **🐍 Virtual‑env** | Creates `iwa-venv/` using `python -m venv`, then upgrades `pip setuptools wheel`.                                         |
-| **🔌 Python deps** | Installs `torch==2.3.0` first (quickest on ARM) and the rest of `requirements.txt`.                                   |
-| **🔑 Secrets**     | Generates a blank `.env` with placeholders for API keys. Edit it before running the app!                                  |
-| **📂 Folders**     | Ensures an empty `data/` directory exists, plus redirects all package caches into `./.cache/`.                            |
-
-> **Note:** you can safely re‑run *setup.sh* after a `git pull`; it skips anything already done.
 
 ---
 
 ## 🔑 Fill in your API keys
 
-Open `.env` in the repo root and add the credentials you obtained from each provider:
+Create `.env` in the repo root and add the credentials you obtained from each provider:
 
 ```ini
-WATSONX_AI_URL=https://...-api.ai.cloud.ibm.com
-WATSONX_API_KEY=************************
-WATSONX_PROJECT_ID=xxxxxxxx-xxxx…
-WATSONX_MODEL_ID=google/flan-t5-xl
-OPENWEATHER_KEY=************************
-GUARDIAN_KEY=************************
+GUARDIAN_KEY=
+OPENWEATHER_KEY=
+IBM_STT_APIKEY=
+IBM_STT_URL=
+IBM_TTS_APIKEY=
+IBM_TTS_URL=
+WATSONX_AI_URL=
+WATSONX_API_KEY=
+WATSONX_PROJECT_ID=
+WATSONX_MODEL_ID=
 ```
+
 ---
 
 ## ▶️ How to run (daily use)
@@ -97,24 +103,36 @@ python UI/main.py
 
 ---
 
-## 🛠️ Optional tweaks
+## 👆 User manual
 
-| Use‑case                  | Command / file                                                                                                             |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Smoother GL & hide cursor | Add to `~/.bashrc`:<br>`export KIVY_GL_BACKEND=sdl2`<br>`export KIVY_WINDOW=sdl2`                                          |
-| Auto‑start on boot        | Create a systemd service pointing to `ExecStart=/home/pi/aiweather/iwa-venv/bin/python /home/pi/aiweather/UI/main.py`      |
-| Clean rebuild             | `rm -rf iwa-venv && ./setup.sh`                                                                                            |
+| UI area / button | Action | What happens |
+|------------------|--------|--------------|
+| **🎙️ Request** | Tap once | Sends the text in the search bar to NLU → routes to weather / news / music / reminder skills. |
+| **🤖 Ask AI** | Tap once | Sends your prompt to the IBM Watson chatbot and reads the reply aloud. |
+| **🌦️ Weather card** | Auto-refresh or tap | Shows the latest temperature and conditions for the chosen city. |
+| **📰 Refresh News** | Tap once | Loads the next Guardian headline. |
+| **🗣️ Read News** | Tap once | IBM TTS speaks the current headline + preview through the USB speaker. |
+| **🎤 Mic (Hold-to-talk)** | Hold → speak → release | Records audio → Watson STT → puts transcript in the search bar. |
+| **🎵 Music search** | Type artist or song | Runs a YouTube search, lets you pick a track, then streams it. |
+| **⏯ / ⏹ / ↩10 s / ↪10 s** | Playback controls | Play / pause, stop, seek backward 10 s, seek forward 10 s. |
+| **🔔 Reminders** | Tap summary | Opens weekly grid; long-press any slot to add / edit reminders. |
+
 
 ---
 
 ## 🤕 Troubleshooting
 
-| Symptom                                   | Likely cause                         | Fix                                                                          |
-| ----------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------- |
-| `ModuleNotFoundError: '_ffi'`             | Forgot to run the `apt install` part | Rerun `./setup.sh` (it will trigger the apt block).                          |
-| Window opens then crashes with GL error   | Old Pi OS driver                     | Enable the FKMS driver in `sudo raspi-config` or set `KIVY_GL_BACKEND=sdl2`. |
-| `ImportError: libvlc.so.5`                | VLC dev lib missing                  | `sudo apt install libvlc-dev` (already in script).                           |
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `setup.sh` stalls on `apt-get` / `pip` | Pi offline or DNS failure | Check Wi-Fi & DNS, then rerun `./setup.sh` once the connection is stable. |
+| “Guardian API error” banner | Wrong `GUARDIAN_KEY` or quota exhausted | Verify key in `.env`; free tier is 12 000 calls/day. |
+| Weather card shows “API error” | `OPENWEATHER_KEY` missing/invalid or exceeded | Double-check `.env`; free tier is 60 calls/min. |
+| IBM STT or TTS fails (“401 Unauthorized”) | Wrong URL vs region or bad key | Re-paste keys *and* URLs from IBM dashboard into `.env`. |
+| `ModuleNotFoundError: '_ffi'` | Skipped the `apt install` block | Rerun `./setup.sh` (it reinstalls system deps). |
+| Window opens then crashes with GL / `bcm2835` error | Legacy GL driver | Enable FKMS in `sudo raspi-config` or `export KIVY_GL_BACKEND=sdl2`. |
+| USB speaker silent / sample-rate error | TTS returned 22 kHz WAV | App auto-resamples; if you still see `Invalid sample rate`, reboot the Pi (rare ALSA quirk). |
 
 ---
 
-Happy hacking—pull requests welcome! 🚀
+Happy hacking — pull requests welcome! 🚀
+```

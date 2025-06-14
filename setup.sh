@@ -101,9 +101,5 @@ fi
 
 # -------- 7) helpful Kivy environment tweaks -------------------------
 echo
-echo "👉 Tip: add these to ~/.bashrc if you run Kivy full-screen:"
-echo "   export KIVY_GL_BACKEND=sdl2"
-echo "   export KIVY_WINDOW=sdl2"
-echo
 echo "✅ Setup complete!  Run:"
 echo "   source iwa-venv/bin/activate && python UI/main.py"

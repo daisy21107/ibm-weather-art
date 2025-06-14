@@ -21,8 +21,8 @@ def text_to_speech_ibm(text: str, output_filename: str = 'output_speech.wav') ->
 
     response = tts_service.synthesize(
         text,
-        voice='en-US_MichaelV3Voice',  # adjust as needed
-        accept='audio/wav'
+        voice='en-US_MichaelV3Voice',
+        accept='audio/wav;rate=48000'
     ).get_result()
 
     with open(output_filename, 'wb') as audio_file:
