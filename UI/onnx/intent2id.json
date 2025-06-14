@@ -1,0 +1,10 @@
+{
+  "get_news": 0,
+  "get_news&get_weather": 1,
+  "get_news&play_music": 2,
+  "get_weather": 3,
+  "get_weather&play_music": 4,
+  "play_music": 5,
+  "reminder_add": 6,
+  "reminder_cancel": 7
+}

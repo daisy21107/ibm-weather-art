@@ -1,5 +1,5 @@
 # AIWeather – UI (weather • Guardian news • BERT NLU • YouTube music)
-# Uncompleted version
+
 import os
 import webbrowser
 import html
@@ -7,6 +7,8 @@ import re
 import csv
 import json
 import logging
+import platform
+import pyaudio
 from logging.handlers import RotatingFileHandler
 from collections import defaultdict, deque
 from datetime import datetime
@@ -14,10 +16,11 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import threading
-import subprocess
+from threading import Event
 import wave
 import uuid
-
+from time import monotonic
+import tempfile
 import requests
 from requests.exceptions import RequestException
 import yt_dlp
@@ -30,7 +33,7 @@ except ModuleNotFoundError:
 from kivy.config import Config
 Config.set("graphics", "width",  "800")
 Config.set("graphics", "height", "480")
-Config.set('graphics', 'show_cursor', '0')
+Config.set('graphics', 'show_cursor', '1') #should change to 0 for pi
 
 from kivy.resources import resource_add_path
 from kivy.core.text import LabelBase
@@ -48,7 +51,8 @@ from kivy.uix.widget import Widget
 from kivy.metrics import dp
 from kivy.animation import Animation
 
-from BERT import infer as nlu_infer
+from infer_onnx import infer_onnx as nlu_infer
+#from BERT import infer as nlu_infer
 
 # ─── load .env ───────────────────────────────────────────────
 try:
@@ -58,37 +62,65 @@ except ImportError:
     pass
 
 # ─── IBM Watson helpers ──────────────────────────────────────
-from stt import transcribe_audio_ibm
-from tts import text_to_speech_ibm
+from stt import transcribe_audio_ibm     # must read env vars
+from tts import text_to_speech_ibm       # must read env vars
+
+# ─── app-wide constants ────────────────────────────────────────────────
+WEATHER_REFRESH_SEC    = 600      # 10 min
+NEWS_REFRESH_SEC       = 300      # 5  min
+MAX_REMINDERS_PER_SLOT = 3
+MAX_RECORD_SEC         = 60       # audio hard limit
 
 # ─── audio I/O setup ─────────────────────────────────────────
-import pyaudio
-
 RATE, FORMAT, CHUNK = 44100, pyaudio.paInt16, 1024
-CARD_IN, CARD_OUT = "hw:1,0", "default"
 
-def record_to_wav(path: str, seconds: int = 60) -> None:
+def record_to_wav(path: str, stop_evt: Event, max_sec: int = MAX_RECORD_SEC) -> None:
+    try:
+        pa = pyaudio.PyAudio()
+        stream = pa.open(format=FORMAT,
+                         channels=1,
+                         rate=RATE,
+                         input=True,
+                         frames_per_buffer=CHUNK)
+
+        frames, start = [], monotonic()
+        while not stop_evt.is_set() and (monotonic() - start) < max_sec:
+            data = stream.read(CHUNK, exception_on_overflow=False)
+            frames.append(data)
+
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
+
+        if frames:                          # write only if something captured
+            with wave.open(path, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(pa.get_sample_size(FORMAT))
+                wf.setframerate(RATE)
+                wf.writeframes(b"".join(frames))
+            print("[DEBUG] Finished writing →", path)
+    except Exception:
+        logging.exception("Failed to record audio")
+
+
+def play_wav(path: str):
+    wf = wave.open(path, 'rb')
     pa = pyaudio.PyAudio()
-    stream = pa.open(format=FORMAT, channels=1, rate=RATE,
-                     input=True, input_device_index=None,
-                     frames_per_buffer=CHUNK)
-    frames = [stream.read(CHUNK, exception_on_overflow=False)
-              for _ in range(int(RATE / CHUNK * seconds))]
+    stream = pa.open(format=pa.get_format_from_width(wf.getsampwidth()),
+                     channels=wf.getnchannels(),
+                     rate=wf.getframerate(),
+                     output=True)
+    data = wf.readframes(1024)
+    while data:
+        stream.write(data)
+        data = wf.readframes(1024)
     stream.stop_stream()
     stream.close()
     pa.terminate()
-    with wave.open(path, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(pa.get_sample_size(FORMAT))
-        wf.setframerate(RATE)
-        wf.writeframes(b"".join(frames))
 
-def play_wav(path: str) -> None:
-    subprocess.call(["aplay", "-D", CARD_OUT, path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 # ─── threading pool ───────────────────────────────────────────
-EXECUTOR = ThreadPoolExecutor(max_workers=4)
+EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 
 # ─── logging setup ────────────────────────────────────────────
 log_dir = Path.home() / "aiweather"
@@ -155,45 +187,71 @@ _register_emoji_font()
 _install_global_unicode_font()
 
 class ReminderManager:
+    """Weekly reminder grid that survives reboots."""
+    SAVE_PATH = Path.home() / ".aiweather_reminders.json"
+
     def __init__(self):
-        self.reminder_list = self._create_reminder_list()
+        monday_reset = datetime.today().weekday() == 0
+        saved = None if monday_reset else self._load()
+        self.reminder_list = saved or self._blank()
 
-    def _create_reminder_list(self):
-        reminder_list = {}
-        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
-            reminder_list[day] = {
-                "Morning": [None, None, None],
-                "Afternoon": [None, None, None],
-                "Evening": [None, None, None]
-            }
-        return reminder_list
+        # If we wiped the week, save the fresh blank grid immediately
+        if monday_reset:
+            self._save()
 
-    def add_one_time(self, day, time, reminder):
-        for i in range(3):
-            if self.reminder_list[day][time][i] is None:
-                self.reminder_list[day][time][i] = reminder
+    # ── public API ─────────────────────────────────────────────────────
+    def add_one_time(self, day, period, text):
+        slot = self.reminder_list[day][period]
+        if text in slot:                       # no duplicates
+            return
+        for i in range(MAX_REMINDERS_PER_SLOT):
+            if slot[i] is None:
+                slot[i] = text
+                self._save()
                 break
 
-    def add_everyday(self, time, reminder):
+    def add_everyday(self, period, text):
         for day in self.reminder_list:
-            for i in range(3):
-                if self.reminder_list[day][time][i] is None:
-                    self.reminder_list[day][time][i] = reminder
-                    break
+            self.add_one_time(day, period, text)
 
-    def delete(self, day, time, reminder):
+    def delete(self, day, period, text):
+        slot = self.reminder_list[day][period]
         try:
-            index = self.reminder_list[day][time].index(reminder)
-            self.reminder_list[day][time][index] = None
-            self.reminder_list[day][time] = (
-                [x for x in self.reminder_list[day][time] if x is not None]
-                + [None] * (3 - len(self.reminder_list[day][time]))
-            )
+            idx = slot.index(text)
+            slot[idx] = None
+            slot[:] = [r for r in slot if r] + [None] * (MAX_REMINDERS_PER_SLOT - len([r for r in slot if r]))
+            self._save()
         except ValueError:
             pass
 
     def get_all(self):
         return self.reminder_list
+
+    # ── internal helpers ───────────────────────────────────────────────
+    def _blank(self):
+        return {
+            d: {p: [None] * MAX_REMINDERS_PER_SLOT
+                for p in ("Morning", "Afternoon", "Evening")}
+            for d in ("Monday", "Tuesday", "Wednesday",
+                      "Thursday", "Friday", "Saturday", "Sunday")
+        }
+
+    def _load(self):
+        if self.SAVE_PATH.exists():
+            try:
+                with self.SAVE_PATH.open(encoding="utf-8") as fh:
+                    return json.load(fh)
+            except Exception:
+                logging.exception("Failed to load reminders; starting fresh")
+        return None
+
+    def _save(self):
+        try:
+            with self.SAVE_PATH.open("w", encoding="utf-8") as fh:
+                json.dump(self.reminder_list, fh, ensure_ascii=False, indent=2)
+        except Exception:
+            logging.exception("Failed to save reminders")
+
 
 class GuardianNewsAPI:
     BASE_URL = "https://content.guardianapis.com/search"
@@ -242,8 +300,9 @@ class MainUI(BoxLayout):
         self.ids.news_footer.text = ""
 
 class AIWeatherApp(App):
-    tmp_rec = Path("/tmp") / "speech_tmp.wav"
-    
+    tmp_rec = Path(__file__).with_name("speech_tmp.wav")
+    _stop_rec_evt: Event
+
     def build(self):
         self.reminder_manager = ReminderManager()
         self.news_api      = GuardianNewsAPI()
@@ -258,8 +317,11 @@ class AIWeatherApp(App):
         self.get_weather()
         self.refresh_news()
         self.update_today_reminder_summary()
-        Clock.schedule_interval(self.get_weather, 600)
-        Clock.schedule_interval(self.refresh_news, 300)
+        Clock.schedule_interval(self.get_weather, WEATHER_REFRESH_SEC)
+        Clock.schedule_interval(self.refresh_news, NEWS_REFRESH_SEC)
+
+    def on_stop(self):
+        EXECUTOR.shutdown(wait=False)
 
     # ─── Weather ───────────────────────────────────────────────────────────────
     def get_weather(self, city=None, *_):
@@ -366,37 +428,69 @@ class AIWeatherApp(App):
 
  # ── Speech capture ───────────────────────────────────────────
     def start_record(self):
-        """Begin recording on button press."""
-        self.root.ids.btn_request.text = "🎙"
-        self._rec_started = datetime.now()
+        if self.tmp_rec.exists():
+            try:
+                self.tmp_rec.unlink()
+            except Exception:
+                logging.exception("Could not delete previous temp WAV")
+
+        if getattr(self, "_rec_thr", None) and self._rec_thr.is_alive():
+            return                           # debounce if still recording
+        self._stop_rec_evt = Event()         # ← create a fresh stop flag
+
+        self.root.ids.btn_request.text = u"\U0001F399"
+        self.root.ids.btn_request.font_name = "Emoji"
+        logger.info("[MIC] Recording started…")
+        self._listen_evt = Clock.schedule_once(self._show_listen_icon, 2)
         self._rec_thr = threading.Thread(
             target=record_to_wav,
-            args=(str(self.tmp_rec), 60),
+            args=(str(self.tmp_rec), self._stop_rec_evt),
             daemon=True)
         self._rec_thr.start()
 
+
     def stop_record(self):
-        """Stop recording on button release and kick off STT."""
-        dur = (datetime.now() - self._rec_started).total_seconds()
-        if dur < 0.3:
-            self.root.ids.btn_request.text = "Request"
+        if not getattr(self, "_stop_rec_evt", None):
+            return                           # safety
+        self._stop_rec_evt.set()             # ← tell thread to finish
+        self._rec_thr.join(timeout=2)        # wait up to 2 s for flush
+        if getattr(self, "_listen_evt", None):
+            self._listen_evt.cancel()
+            self._listen_evt = None
+        if not self.tmp_rec.exists():
+            logger.warning("Recording file not found: %s", self.tmp_rec)
+            self._reset_mic_icon()
             return
-        self.root.ids.btn_request.text = "⌛"
+        self._reset_mic_icon()
+        logger.info("[STT] Submitting audio file: %s", self.tmp_rec)
         EXECUTOR.submit(transcribe_audio_ibm, str(self.tmp_rec))\
                 .add_done_callback(self._after_stt)
+
+    def _reset_mic_icon(self):
+        self.root.ids.btn_request.text = u"\u23F3"
+        self.root.ids.btn_request.font_name = "Emoji"
+
+    def _show_listen_icon(self, *_):
+        self.root.ids.btn_request.text = u"\u25C9"
+        self.root.ids.btn_request.font_name = "Emoji"
 
     def _after_stt(self, fut):
         try:
             spoken = fut.result().strip()
+            logger.info(f"[STT] Transcript: {spoken!r}")
         except Exception as e:
-            logging.exception(e)
+            logger.exception("STT failed")
             spoken = ""
+
         def _ui(_):
-            self.root.ids.btn_request.text = "Request"
+            self.root.ids.btn_request.text = u"\U0001F399"
+            self.root.ids.btn_request.font_name = "Emoji"
             if spoken:
                 self.root.ids.request_input.text = spoken
-                self.process_request()
+                #self.process_request()
+
         Clock.schedule_once(_ui)
+
 
     # ── Read-news TTS ────────────────────────────────────────────
     def read_news_aloud(self):
@@ -405,7 +499,7 @@ class AIWeatherApp(App):
         spoken  = f"{title}. {preview}".strip("— ").strip()
         if not spoken:
             return
-        out = Path("/tmp") / f"news_{uuid.uuid4().hex}.wav"
+        out = Path(tempfile.gettempdir()) / f"news_{uuid.uuid4().hex}.wav"
         def _do_tts():
             text_to_speech_ibm(spoken, str(out))
             return out
@@ -423,7 +517,9 @@ class AIWeatherApp(App):
     def _route_from_nlu(self, fut, raw):
         ts = datetime.utcnow().isoformat(timespec="seconds")
         try:
-            intent, slots = fut.result()
+            intents, slots = fut.result()
+            if isinstance(intents, str):
+                intents = [intents]
         except Exception:
             Clock.schedule_once(lambda *_: self.root.show_error("NLU error"))
             return
@@ -433,32 +529,129 @@ class AIWeatherApp(App):
             if t and t != "O":
                 buckets[t.split("-")[-1].lower()].append(w)
         slot_json = {k: " ".join(v) for k, v in buckets.items()}
-        logger.info('INTENT=%s  SLOTS=%s  RAW="%s"', intent, slot_json, raw)
-        _append_csv(ts, raw, intent, slot_json)
-        Clock.schedule_once(lambda *_: self._apply_nlu_result(intent, buckets))
+        logger.info('INTENTS=%s  SLOTS=%s  RAW="%s"',  ",".join(intents), slot_json, raw)
+        _append_csv(ts, raw, ",".join(intents), slot_json)
+        Clock.schedule_once(lambda *_: self._apply_nlu_result(intents, buckets))
 
-    def _apply_nlu_result(self, intent, buckets):
-        loc   = " ".join(buckets.get("location", [])).title()
-        topic = " ".join(buckets.get("topic", []))
-        words = " ".join(sum(buckets.values(), []))
-        if intent == "get_weather":
-            if loc:
-                self.current_city = loc
-            self.get_weather()
-        elif intent == "get_news":
-            self._news_keyword = topic or words or None
-            self._news_buffer.clear()
-            self.refresh_news()
-        elif intent == "play_music":
-            query = (topic or words).strip()
-            self.get_music(query=query or None)
-        else:
+
+    def _apply_nlu_result(self, intents, buckets):
+        """
+        Handle every intent returned by the NLU engine.
+
+        Supported skills
+        ----------------
+        get_weather      — uses 'location'
+        get_news         — uses 'topic' (fallback: all slot words)
+        play_music       — uses 'artist' and/or 'song' (no other fallback)
+        reminder_add     — uses 'behavior' + 'time'
+        reminder_cancel  — uses 'behavior' + 'time'
+        """
+
+        # ---------- normalise & deduplicate ---------------------------------
+        if isinstance(intents, str):
+            intents = [intents]
+        intents = list(dict.fromkeys(intents))             # preserve order
+
+        # ---------- generic slot helpers ------------------------------------
+        loc     = " ".join(buckets.get("location", [])).title()
+        topic   = " ".join(buckets.get("topic", []))
+        words   = " ".join(sum(buckets.values(), []))
+
+        artist  = " ".join(buckets.get("artist", []))
+        song    = " ".join(buckets.get("song", []))
+
+        behavior = " ".join(buckets.get("behavior", []))
+        time_str = " ".join(buckets.get("time", []))
+
+        # ---------- time parsing helper -------------------------------------
+        def _parse_day_period(s: str):
+            """
+            Convert a free-text time phrase into (weekday, period).
+
+            * weekday:  'Monday' … 'Sunday'
+            * period:   'Morning' | 'Afternoon' | 'Evening'
+
+            Falls back to today's weekday and 'Morning' if missing.
+            Handles 'today', 'tomorrow' automatically.
+            """
+            weekdays = ["Monday", "Tuesday", "Wednesday",
+                        "Thursday", "Friday", "Saturday", "Sunday"]
+            s_low = s.lower()
+
+            # weekday
+            if "today" in s_low:
+                day_idx = datetime.today().weekday()
+            elif "tomorrow" in s_low:
+                day_idx = (datetime.today().weekday() + 1) % 7
+            else:
+                day_idx = next((i for i, d in enumerate(weekdays)
+                                if d.lower() in s_low), None)
+                if day_idx is None:
+                    day_idx = datetime.today().weekday()
+            weekday = weekdays[day_idx]
+
+            # period
+            if "afternoon" in s_low:
+                period = "Afternoon"
+            elif "evening" in s_low or "night" in s_low:
+                period = "Evening"
+            else:                                    # default / morning
+                period = "Morning"
+
+            return weekday, period
+
+        handled = False
+
+        # ---------- dispatch loop -------------------------------------------
+        for intent in intents:
+
+            # ── Weather ────────────────────────────────────────────────────
+            if intent == "get_weather":
+                if loc:
+                    self.current_city = loc
+                self.get_weather()
+                handled = True
+
+            # ── News ───────────────────────────────────────────────────────
+            elif intent == "get_news":
+                self._news_keyword = topic or words or None
+                self._news_buffer.clear()
+                self.refresh_news()
+                handled = True
+
+            # ── Music ──────────────────────────────────────────────────────
+            elif intent == "play_music":
+                if artist or song:
+                    query = f"{artist} {song}".strip()
+                    self.get_music(query)
+                    handled = True
+
+            # ── Reminders: add / cancel ───────────────────────────────────
+            elif intent in ("reminder_add", "reminder_cancel"):
+                if not behavior:            # nothing to add / cancel
+                    continue
+                weekday, period = _parse_day_period(time_str)
+                rm = self.reminder_manager
+                if intent == "reminder_add":
+                    rm.add_one_time(weekday, period, behavior)
+                else:  # reminder_cancel
+                    rm.delete(weekday, period, behavior)
+                self.update_today_reminder_summary()
+                handled = True
+
+        # ---------- UX feedback --------------------------------------------
+        if not handled:
             self.root.ids.request_input.hint_text = (
-                "Try “weather in Berlin” or “news about rugby”."
+                "Try “weather in Berlin”, “news about rugby”, "
+                "“play song Yellow by Coldplay”, or "
+                "“I have a meeting on Monday morning”."
             )
             return
+
+        # clear the input after success
         self.root.ids.request_input.text = ""
         self.root.ids.request_input.focus = False
+
 
     # ─── YouTube music ─────────────────────────────────────────────────────────
     def _init_player(self):
@@ -618,98 +811,130 @@ class AIWeatherApp(App):
     def music_forward(self, *_):
         self._seek(+10)
 
-    # ─── Reminders ─────────────────────────────────────────────────────────────
     def open_reminder_popup(self):
-        popup = Popup(title="Weekly Reminders", size_hint=(0.95, 0.95))
-        scroll = ScrollView()
-        grid = GridLayout(cols=8, spacing=dp(5), padding=dp(10),
-                          size_hint_y=None)
+        days    = ["Monday", "Tuesday", "Wednesday",
+                "Thursday", "Friday", "Saturday", "Sunday"]
+        periods = ["Morning", "Afternoon", "Evening"]
+
+        popup  = Popup(title="Weekly Reminders", size_hint=(0.95, 0.95))
+        scroll = ScrollView(do_scroll_x=False)
+
+        # Column count: one for period labels + 7 weekdays
+        grid = GridLayout(
+            cols=len(days) + 1,
+            padding=dp(16),
+            spacing=dp(10),
+            size_hint_y=None
+        )
         grid.bind(minimum_height=grid.setter("height"))
 
-        grid.add_widget(Label(text="", bold=True, font_size="18sp"))  # was 20sp
-        for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
-            grid.add_widget(Label(
-                text=f"[b]{day}[/b]",
+        def _label(text, *, bold=False, height=dp(40)):
+            lbl = Label(
+                text=f"[b]{text}[/b]" if bold else text,
                 markup=True,
                 font_name="UI",
-                font_size="18sp",  # was 20sp
+                font_size="18sp",
+                halign="center" if bold else "left",
+                valign="middle" if bold else "top",
                 size_hint_y=None,
-                height=dp(30)
-            ))
+                height=height,
+                text_size=(None, None)   # let Kivy compute wrapping
+            )
+            return lbl
 
-        times = ["Morning", "Afternoon", "Evening"]
+        # ── Header row ───────────────────────────────────────────────────────
+        grid.add_widget(_label(""))  # empty top-left corner
+        for d in days:
+            grid.add_widget(_label(d, bold=True))
+
+        # ── Body rows ────────────────────────────────────────────────────────
         data = self.reminder_manager.get_all()
-        for time in times:
-            grid.add_widget(Label(
-                text=f"[b]{time}[/b]",
-                markup=True,
-                font_name="UI",
-                font_size="18sp",  # was 20sp
-                size_hint_y=None,
-                height=dp(60)
-            ))
-            for day in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]:
-                reminders = data[day][time]
-                msg = "\n".join(r for r in reminders if r) or "—"
-                grid.add_widget(Label(
-                    text=msg,
-                    font_name="UI",
-                    font_size="18sp",  # was 20sp
-                    halign="left",
-                    valign="top",
-                    size_hint_y=None,
-                    height=dp(60),
-                    text_size=(dp(100), None)
-                ))
+        CELL_H = dp(120)   # more vertical space for wrapped reminders
 
+        for p in periods:
+            grid.add_widget(_label(p, bold=True, height=CELL_H))
+
+            for d in days:
+                reminders = [r for r in data[d][p] if r]
+                text = "• " + "\n• ".join(reminders) if reminders else "—"
+                grid.add_widget(_label(text, height=CELL_H))
+
+        # ── Finish ───────────────────────────────────────────────────────────
         scroll.add_widget(grid)
         popup.content = scroll
         popup.open()
 
+        # ─── Add / edit reminder dialog ─────────────────────────────────────────
+    from kivy.uix.boxlayout import BoxLayout   # already imported, listed for clarity
+
+    # ─── Add / edit reminder dialog ─────────────────────────────────────────
     def open_add_reminder_popup(self):
-        popup = Popup(title="Add Reminder", size_hint=(0.8, 0.6))
-        layout = GridLayout(
+        rm       = self.reminder_manager
+        days     = ["Monday", "Tuesday", "Wednesday",
+                    "Thursday", "Friday", "Saturday", "Sunday"]
+        periods  = ["Morning", "Afternoon", "Evening"]
+
+        popup = Popup(title="Edit Reminder", size_hint=(0.8, 0.7))
+
+        # outer container: vertical box → [ScrollView | Save-button]
+        root_box = BoxLayout(orientation="vertical", padding=dp(10), spacing=dp(10))
+
+        # ── form inside a ScrollView -----------------------------------------
+        form_grid = GridLayout(
             cols=2, spacing=dp(10), padding=dp(20),
-            row_default_height=dp(40), size_hint_y=None
+            row_default_height=dp(50), size_hint_y=None
         )
-        layout.bind(minimum_height=layout.setter("height"))
+        form_grid.bind(minimum_height=form_grid.setter("height"))
+        scroll = ScrollView(do_scroll_x=False)
+        scroll.add_widget(form_grid)
 
-        layout.add_widget(Label(text="Day:", font_name="UI", font_size="18sp"))  # was 20sp
-        day_spinner = Spinner(
-            text="Monday",
-            values=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
-            font_size="18sp"  # was 20sp
-        )
-        layout.add_widget(day_spinner)
+        # day selector
+        form_grid.add_widget(Label(text="Day:", font_name="UI", font_size="18sp"))
+        day_spinner = Spinner(text=datetime.now().strftime("%A"),
+                            values=days, font_size="18sp")
+        form_grid.add_widget(day_spinner)
 
-        layout.add_widget(Label(text="Time:", font_name="UI", font_size="18sp"))  # was 20sp
-        time_spinner = Spinner(
-            text="Morning",
-            values=["Morning", "Afternoon", "Evening"],
-            font_size="18sp"  # was 20sp
-        )
-        layout.add_widget(time_spinner)
+        # period selector
+        form_grid.add_widget(Label(text="Time:", font_name="UI", font_size="18sp"))
+        time_spinner = Spinner(text="Morning", values=periods, font_size="18sp")
+        form_grid.add_widget(time_spinner)
 
-        layout.add_widget(Label(text="Reminder:", font_name="UI", font_size="18sp"))  # was 20sp
-        reminder_input = TextInput(multiline=False, font_name="UI", font_size="18sp")  # was 20sp
-        layout.add_widget(reminder_input)
+        # text input
+        form_grid.add_widget(Label(text="Reminders:", font_name="UI",
+                                font_size="18sp"))
+        txt = TextInput(multiline=True, font_name="UI", font_size="18sp",
+                        size_hint_y=None, height=dp(140))
+        form_grid.add_widget(txt)
 
-        def submit_reminder(*_):
-            day  = day_spinner.text
-            time = time_spinner.text
-            text = reminder_input.text.strip()
-            if text:
-                self.reminder_manager.add_one_time(day, time, text)
-                popup.dismiss()
+        # preload text box with current slot ---------------------------------
+        def _sync_text(*_):
+            slot = rm.get_all()[day_spinner.text][time_spinner.text]
+            txt.text = "\n".join(r for r in slot if r)
+        day_spinner.bind(text=_sync_text)
+        time_spinner.bind(text=_sync_text)
+        _sync_text()
+
+        # save handler -------------------------------------------------------
+        def _save(*_):
+            items = [s.strip() for line in txt.text.splitlines()
+                                for s in line.split(",") if s.strip()]
+            slot  = items[:MAX_REMINDERS_PER_SLOT] \
+                + [None] * (MAX_REMINDERS_PER_SLOT - len(items[:MAX_REMINDERS_PER_SLOT]))
+            rm.reminder_list[day_spinner.text][time_spinner.text] = slot
+            rm._save()
             self.update_today_reminder_summary()
+            popup.dismiss()
 
-        layout.add_widget(Widget())
-        layout.add_widget(Button(text="Add", font_size="18sp", on_release=submit_reminder))  # was 20sp
+        # fixed footer button (always visible) -------------------------------
+        btn_box = BoxLayout(size_hint_y=None, height=dp(50))
+        btn_box.add_widget(Button(text="Save", font_size="18sp", on_release=_save))
 
-        scroll = ScrollView()
-        scroll.add_widget(layout)
-        popup.content = scroll
+        # assemble popup -----------------------------------------------------
+        root_box.add_widget(scroll)
+        root_box.add_widget(btn_box)
+        popup.content = root_box
         popup.open()
+
 
     def update_today_reminder_summary(self):
         today = datetime.now().strftime("%A")
