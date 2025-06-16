@@ -743,18 +743,42 @@ class AIWeatherApp(App):
                     self.get_music(query)
                     handled = True
 
-            # ── Reminders: add / cancel ───────────────────────────────────
+            # ── Reminders: add / cancel / clear-day ───────────────────────────
             elif intent in ("reminder_add", "reminder_cancel"):
-                if not behavior:            # nothing to add / cancel
-                    continue
-                weekday, period = _parse_day_period(time_str)
                 rm = self.reminder_manager
+                weekday, period = _parse_day_period(time_str)
+
+                # ---------- ADD -------------------------------------------------
                 if intent == "reminder_add":
+                    if not behavior:                 # nothing to add
+                        continue
                     rm.add_one_time(weekday, period, behavior)
-                else:  # reminder_cancel
-                    rm.delete(weekday, period, behavior)
+
+                # ---------- CANCEL ----------------------------------------------
+                else:  # intent == "reminder_cancel"
+                    if behavior:                     # cancel just that task
+                        rm.delete(weekday, period, behavior)
+                    else:
+                        # no behaviour ⇒ wipe the chosen day / period(s)
+                        t_low = time_str.lower()
+                        keywords = ("morning", "afternoon", "evening", "night")
+
+                        def _blank_slot():
+                            return [None] * MAX_REMINDERS_PER_SLOT
+
+                        if any(k in t_low for k in keywords):
+                            # e.g. "tomorrow evening" → clear only that bucket
+                            rm.reminder_list[weekday][period] = _blank_slot()
+                        else:
+                            # e.g. "tomorrow" → clear the whole day
+                            rm.reminder_list[weekday] = {
+                                p: _blank_slot() for p in ("Morning", "Afternoon", "Evening")
+                            }
+                        rm._save()
+
                 self.update_today_reminder_summary()
                 handled = True
+
 
             # ── Reminders: clear the entire week ──────────────────────────
             elif intent == "reminder_clear":

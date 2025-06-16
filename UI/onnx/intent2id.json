@@ -6,5 +6,6 @@
   "get_weather&play_music": 4,
   "play_music": 5,
   "reminder_add": 6,
-  "reminder_cancel": 7
+  "reminder_cancel": 7,
+  "reminder_clear": 8
 }
