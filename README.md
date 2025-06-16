@@ -1,13 +1,13 @@
 
 # aiweather
 
-*Raspberry Pi 4 powered kiosk dashboard that mixes live weather, news, YouTube-radio loops and IBM watsonx.ai text generation, all wrapped in a touch-friendly Kivy UI.*
+*Raspberry Pi 4B powered kiosk dashboard that mixes live weather, news, YouTube-radio loops and IBM watsonx.ai text generation, all wrapped in a touch-friendly Kivy UI.*
 
 ---
 
 # IBM – 3D-Printed AI Weather Art
 
-An AI-enabled, **3D-printed kinetic art** companion aimed at supporting elderly individuals living alone. The installation blends the software in *aiweather* with a physical sculpture, using IBM Watson Assistant for conversation, live weather forecasting, voice interaction, and personalised media suggestions.
+An AI-enabled, **3D-printed case** companion aimed at supporting elderly individuals living alone. The installation blends the software in *aiweather* with a physical sculpture, using IBM Watson Assistant for conversation, live weather forecasting, voice interaction, and personalised media suggestions.
 
 ## Project Objectives
 
@@ -29,7 +29,7 @@ An AI-enabled, **3D-printed kinetic art** companion aimed at supporting elderly 
 |------|--------------|----------|
 | 7″ Touch display | Official Raspberry Pi 7-inch display | <https://uk.rs-online.com/web/p/raspberry-pi-screens/8997466?gb=s> |
 | USB microphone | Mini USB Microphone | <https://thepihut.com/products/mini-usb-microphone> |
-| USB speaker | Pi Hut Mini External USB Stereo Speaker | <https://thepihut.com/products/mini-external-usb-stereo-speaker?variant=31955934801> |
+| USB speaker | Mini External USB Stereo Speaker | <https://thepihut.com/products/mini-external-usb-stereo-speaker?variant=31955934801> |
 
 ---
 
@@ -66,7 +66,7 @@ chmod +x setup.sh
 
 ## 🔑 Fill in your API keys
 
-Create `.env` in the repo root and add the credentials you obtained from each provider:
+An empty `.env` will be created in the repo root by executing `./setup.sh` and add the credentials you obtained from each provider manually:
 
 ```ini
 GUARDIAN_KEY=
@@ -85,20 +85,18 @@ WATSONX_MODEL_ID=
 
 ## ▶️ How to run (daily use)
 
+Just double-click the **AIWeather** icon that the installer put on your Desktop.
+
 ```bash
-cd /home/pi/aiweather
-source iwa-venv/bin/activate   # activate the environment
-python UI/main.py              # launch the kiosk UI
+/home/pi/aiweather/run.sh       # does the same thing as the icon
 ```
 
 ### Updating later
 
 ```bash
 cd /home/pi/aiweather
-git pull                        # grab latest commits
-./setup.sh                      # installs new deps if any
-source iwa-venv/bin/activate
-python UI/main.py
+git pull
+./setup.sh
 ```
 
 ---
@@ -109,13 +107,13 @@ python UI/main.py
 |------------------|--------|--------------|
 | **🎙️ Request** | Tap once | Sends the text in the search bar to NLU → routes to weather / news / music / reminder skills. |
 | **🤖 Ask AI** | Tap once | Sends your prompt to the IBM Watson chatbot and reads the reply aloud. |
-| **🌦️ Weather card** | Auto-refresh or tap | Shows the latest temperature and conditions for the chosen city. |
+| **🌦️ Weather card** | Auto-refresh or search | Shows the latest temperature for the chosen city. |
 | **📰 Refresh News** | Tap once | Loads the next Guardian headline. |
 | **🗣️ Read News** | Tap once | IBM TTS speaks the current headline + preview through the USB speaker. |
 | **🎤 Mic (Hold-to-talk)** | Hold → speak → release | Records audio → Watson STT → puts transcript in the search bar. |
-| **🎵 Music search** | Type artist or song | Runs a YouTube search, lets you pick a track, then streams it. |
+| **🎵 Music search** | Search artist or song | Runs a YouTube search, lets you pick a track, then streams it. |
 | **⏯ / ⏹ / ↩10 s / ↪10 s** | Playback controls | Play / pause, stop, seek backward 10 s, seek forward 10 s. |
-| **🔔 Reminders** | Tap summary | Opens weekly grid; long-press any slot to add / edit reminders. |
+| **🔔 Reminders** | Tap summary | Opens weekly grid; edit reminders via speech or typing. |
 
 
 ---
@@ -135,4 +133,3 @@ python UI/main.py
 ---
 
 Happy hacking — pull requests welcome! 🚀
-```

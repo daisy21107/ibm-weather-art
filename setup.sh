@@ -4,7 +4,7 @@
 # ----------------------------------------------------------------------
 set -euo pipefail
 
-# -------- 0) system-wide C/C++ libraries (one-time) ------------------
+# -------- 0) system-wide C/C++ libraries (one-time) -------------------
 if ! dpkg -s libvlc-dev portaudio19-dev >/dev/null 2>&1; then
   echo "🔧 Installing system libraries (sudo password may be required)…"
   sudo apt update
@@ -18,7 +18,7 @@ else
   echo "✔︎ System libraries already present – skipping apt install."
 fi
 
-# -------- 1) create & activate virtual environment -------------------
+# -------- 1) create & activate virtual environment --------------------
 if [ ! -d "iwa-venv" ]; then
   echo "🐍 Creating virtual environment (Python 3)…"
   python3 -m venv iwa-venv
@@ -27,7 +27,7 @@ fi
 source iwa-venv/bin/activate
 echo "🔗 Virtual environment 'iwa-venv' activated."
 
-# -------- 2) redirect caches into the repo ---------------------------
+# -------- 2) redirect caches into the repo ----------------------------
 ACTIVATE_POST="$VIRTUAL_ENV/bin/postactivate"
 if [ ! -f "$ACTIVATE_POST" ]; then
   echo "⚙️  Creating venv post-activate hook to relocate caches…"
@@ -45,14 +45,14 @@ fi
 source "$ACTIVATE_POST"
 echo "🗂  Cache directories redirected into ./.cache/*"
 
-# -------- 3) upgrade installer tools, then install deps --------------
+# -------- 3) upgrade installer tools, then install deps ---------------
 python -m pip install --upgrade pip setuptools wheel
 pip install --no-cache-dir torch==2.3.0 \
   --index-url https://download.pytorch.org/whl/cpu
 pip install --no-cache-dir -r requirements.txt
 
-# -------- 4) scaffold UI/.env with empty keys ------------------------
-mkdir -p UI                      # make sure the folder exists
+# -------- 4) scaffold UI/.env with empty keys -------------------------
+mkdir -p UI
 if [ ! -f UI/.env ]; then
   echo "🗝️  Creating UI/.env file with API-key placeholders…"
   cat <<'EOF' > UI/.env
@@ -73,11 +73,11 @@ else
   echo "✔︎ UI/.env already exists — leaving it unchanged."
 fi
 
-# -------- 5) make sure data/ folder is present -----------------------
+# -------- 5) ensure data/ folder exists -------------------------------
 mkdir -p data/
 echo "📂 Ensured data/ directory exists."
 
-# -------- 6) ensure UI/fonts directory & download icon fonts ---------
+# -------- 6) ensure UI/fonts directory & download icon fonts ----------
 FONTS_DIR="UI/fonts"
 mkdir -p "$FONTS_DIR"
 
@@ -99,7 +99,36 @@ else
   echo "✔︎ fa-solid-900.ttf already present."
 fi
 
-# -------- 7) helpful Kivy environment tweaks -------------------------
+# -------- 7) create Desktop shortcut (if missing) ---------------------
+DESKTOP_DIR="$HOME/Desktop"
+DESKTOP_FILE="$DESKTOP_DIR/AIWeather.desktop"
+
+mkdir -p "$DESKTOP_DIR"
+
+if [ ! -f "$DESKTOP_FILE" ]; then
+  echo "🖼️  Creating $DESKTOP_FILE…"
+  cat <<EOF > "$DESKTOP_FILE"
+[Desktop Entry]
+Type=Application
+Name=AIWeather
+Comment=Launch the AIWeather kiosk UI
+Exec=$HOME/aiweather/run.sh
+Path=$HOME/aiweather
+Icon=/home/pi/aiweather/src/aiweather_icon.png
+Terminal=false
+Categories=Utility;
+EOF
+else
+  echo "✔︎ AIWeather.desktop already exists — leaving it unchanged."
+fi
+
+# -------- 8) make launch helpers executable ---------------------------
+chmod +x "$HOME/aiweather/run.sh"          2>/dev/null || true
+chmod +x "$DESKTOP_FILE"                   2>/dev/null || true
+
+# -------- 9) all done --------------------------------------------------
 echo
-echo "✅ Setup complete!  Run:"
-echo "   source iwa-venv/bin/activate && python UI/main.py"
+echo "✅ Setup complete!"
+echo "   → Double-click the AIWeather icon on your Desktop to start."
+echo "   (If you need a terminal launch: $HOME/aiweather/run.sh)"
+

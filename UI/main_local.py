@@ -63,6 +63,9 @@ except ImportError:
 from stt import transcribe_audio_ibm     # must read env vars
 from tts import text_to_speech_ibm       # must read env vars
 
+# ─── Watsonx.ai Chatbot Setup ──────────────────────────────────────
+from chatbot_helper import get_response
+
 # ─── app-wide constants ────────────────────────────────────────────────
 WEATHER_REFRESH_SEC    = 600      # 10 min
 NEWS_REFRESH_SEC       = 300      # 5  min
@@ -92,7 +95,7 @@ def record_to_wav(path: str, stop_evt: Event, max_sec: int = MAX_RECORD_SEC) -> 
         stream.close()
         pa.terminate()
 
-        if frames:                          # write only if something captured
+        if frames:
             with wave.open(path, "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(pa.get_sample_size(FORMAT))
@@ -125,17 +128,38 @@ EXECUTOR = ThreadPoolExecutor(max_workers=os.cpu_count() or 4)
 # ─── logging setup ────────────────────────────────────────────
 log_dir = Path.home() / "aiweather"
 log_dir.mkdir(exist_ok=True)
+
+fmt = logging.Formatter("[%(asctime)s] %(message)s")
+
+# --- NLU logger -------------------------------------------------------------
 logger = logging.getLogger("nlu")
 logger.setLevel(logging.INFO)
-fmt = logging.Formatter("[%(asctime)s] %(message)s")
-sh = logging.StreamHandler()
+
+sh = logging.StreamHandler()          # to terminal
 sh.setFormatter(fmt)
 logger.addHandler(sh)
-fh = RotatingFileHandler(log_dir / "nlu.log", maxBytes=300_000,
-                         backupCount=5, encoding="utf-8")
+
+fh = RotatingFileHandler(log_dir / "nlu.log",
+                         maxBytes=300_000, backupCount=5,
+                         encoding="utf-8")          # to file
 fh.setFormatter(fmt)
 logger.addHandler(fh)
 
+# --- Chatbot logger (new) ----------------------------------------------------
+chatlog = logging.getLogger("chatbot")
+chatlog.setLevel(logging.INFO)
+
+chat_sh = logging.StreamHandler()      # to terminal
+chat_sh.setFormatter(fmt)
+chatlog.addHandler(chat_sh)
+
+chat_fh = RotatingFileHandler(log_dir / "chatbot.log",
+                              maxBytes=300_000, backupCount=5,
+                              encoding="utf-8")     # to file
+chat_fh.setFormatter(fmt)
+chatlog.addHandler(chat_fh)
+
+# ---------------------------------------------------------------------------
 csv_path = log_dir / "nlu_log.csv"
 if not csv_path.exists():
     with csv_path.open("w", newline="", encoding="utf-8") as f:
@@ -153,6 +177,7 @@ ydl_formatter = logging.Formatter("[yt_dlp] %(message)s")
 ydl_handler.setFormatter(ydl_formatter)
 ydl_logger.addHandler(ydl_handler)
 ydl_logger.setLevel(logging.WARNING)
+
 
 # ─── font registration ─────────────────────────────────────────
 def _register_emoji_font() -> None:
@@ -303,6 +328,11 @@ class AIWeatherApp(App):
     tmp_rec = Path(__file__).with_name("speech_tmp.wav")
     _stop_rec_evt: Event
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._is_speaking = False
+        self._speak_stream = None
+        
     def build(self):
         self.reminder_manager = ReminderManager()
         self.news_api      = GuardianNewsAPI()
@@ -325,12 +355,14 @@ class AIWeatherApp(App):
 
     # ─── Weather ───────────────────────────────────────────────────────────────
     def get_weather(self, city=None, *_):
+        if not isinstance(city, str):
+            city = None
         city = city or self.current_city or "London"
         def task():
             key = os.getenv("OPENWEATHER_KEY")
             if not key:
                 Clock.schedule_once(lambda *_:
-                    self._upd_weather("❌", "OPENWEATHER_KEY missing")
+                    self._upd_weather("✖", "OPENWEATHER_KEY missing")
                 )
                 return
             try:
@@ -353,7 +385,7 @@ class AIWeatherApp(App):
                 )
             except Exception:
                 Clock.schedule_once(lambda *_:
-                    self._upd_weather("❌", "API error")
+                    self._upd_weather("✖", "API error")
                 )
         EXECUTOR.submit(task)
 
@@ -425,6 +457,90 @@ class AIWeatherApp(App):
 
     def open_article(self, instance, url):
         webbrowser.open(url)
+
+ # ── Chatbot ───────────────────────────────────────────
+
+    def ask_chatbot(self):
+        query = self.root.ids.request_input.text.strip()
+        if not query:
+            return
+
+        self.root.ids.chatbot_output.text = "Thinking..."
+        EXECUTOR.submit(lambda: get_response(query))\
+                .add_done_callback(lambda fut: Clock.schedule_once(
+                    lambda *_: setattr(self.root.ids.chatbot_output, "text", fut.result())))
+
+    def ask_ai_and_speak(self):
+        if self._is_speaking:
+            if self._speak_stream:
+                self._is_speaking = False
+            return
+
+        user_input = self.root.ids.request_input.text.strip()
+        if not user_input:
+            return
+        chatlog.info("Prompt : %s", user_input)
+        prompt = f"Reply in one paragraph. {user_input}"
+        self.root.ids.chatbot_output.text = "Thinking..."
+
+        def task():
+            reply = get_response(prompt)
+            self._speak_chatbot_response(reply)
+
+        EXECUTOR.submit(task)
+        
+        self.root.ids.request_input.text = ""
+
+    def _speak_chatbot_response(self, reply):
+        chatlog.info("Reply  : %s", reply)
+        out = Path(tempfile.gettempdir()) / f"chatbot_{uuid.uuid4().hex}.wav"
+        
+        try:
+            text_to_speech_ibm(reply, str(out))
+        except Exception as e:
+            logger.exception("TTS failed")
+            Clock.schedule_once(lambda *_: setattr(self.root.ids.chatbot_output, "text", "TTS error"))
+            return
+
+        def update_ui(*_):
+
+            if self._is_speaking and self._speak_stream is not None:
+                self._speak_stream.stop_stream()
+                self._speak_stream.close()
+                self._speak_stream = None
+                self._is_speaking = False
+                return
+
+            wf = wave.open(str(out), 'rb')
+            pa = pyaudio.PyAudio()
+            self._speak_stream = pa.open(format=pa.get_format_from_width(wf.getsampwidth()),
+                                        channels=wf.getnchannels(),
+                                        rate=wf.getframerate(),
+                                        output=True)
+
+            self._is_speaking = True
+            self.root.ids.chatbot_output.font_name = "FA"
+            self.root.ids.chatbot_output.text = u"\uf04c"  # pause icon
+
+            def play():
+                data = wf.readframes(1024)
+                while data and self._is_speaking:
+                    self._speak_stream.write(data)
+                    data = wf.readframes(1024)
+                self._speak_stream.stop_stream()
+                self._speak_stream.close()
+                self._speak_stream = None
+                pa.terminate()
+                self._is_speaking = False
+                self.root.ids.chatbot_output.font_name = "UI"
+                self.root.ids.chatbot_output.text = "Ask AI"
+
+
+            threading.Thread(target=play, daemon=True).start()
+
+        Clock.schedule_once(update_ui)
+
+
 
  # ── Speech capture ───────────────────────────────────────────
     def start_record(self):
@@ -708,7 +824,7 @@ class AIWeatherApp(App):
 
     def _music_error(self, msg):
         Clock.schedule_once(lambda *_: (
-            setattr(self.root.ids.music_icon,  "text", "❌"),
+            setattr(self.root.ids.music_icon, "text", "✖"),
             setattr(self.root.ids.music_label, "text", msg)
         ))
 

@@ -1,5 +1,5 @@
 #:import dp kivy.metrics.dp
-#:set EMOJI_BIG  40    # Icon size aligned with 20sp body text
+#:set EMOJI_BIG  60    # Icon size aligned with 20sp body text
 #:set EMOJI_BTN  26    # Icon size aligned with 20sp body text
 
 <MainUI>:
@@ -51,15 +51,18 @@
                 size_hint_y: None
                 height: dp(90)
                 Button:
+                    id: btn_request
                     text: "Request"
                     font_size: "20sp"
                     on_release: app.process_request()
                     color: 1, 1, 1, 1
                 Button:
+                    id: chatbot_output
                     text: "Ask AI"
                     font_size: "20sp"
-                    # on_release: 
+                    on_release: app.ask_ai_and_speak()
                     color: 1, 1, 1, 1
+                    
 
             # ─── Row 2 (90 dp) ─────────────────────────────────────────────────────
             # Col 1: Weather icon + label
