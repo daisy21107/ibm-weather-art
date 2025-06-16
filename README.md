@@ -41,6 +41,7 @@ An AI-enabled, **3D-printed case** companion aimed at supporting elderly individ
 │   └── main.py               # application entry-point
 ├── requirements.txt          # python dependencies
 ├── setup.sh                  # one-shot bootstrap script
+├── run.sh                    # programme starting script
 ├── data/                     # runtime downloads & cache
 └── …                         # other source files, assets, docs
 ```
@@ -85,6 +86,7 @@ WATSONX_MODEL_ID=
 
 ## ▶️ How to run (daily use)
 
+Make sure the wifi connected
 Just double-click the **AIWeather** icon that the installer put on your Desktop.
 
 ```bash
