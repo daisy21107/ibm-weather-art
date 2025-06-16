@@ -661,6 +661,7 @@ class AIWeatherApp(App):
         play_music       — uses 'artist' and/or 'song' (no other fallback)
         reminder_add     — uses 'behavior' + 'time'
         reminder_cancel  — uses 'behavior' + 'time'
+        reminder_clear   — clears all reminders for the week
         """
 
         # ---------- normalise & deduplicate ---------------------------------
@@ -755,6 +756,13 @@ class AIWeatherApp(App):
                 self.update_today_reminder_summary()
                 handled = True
 
+            # ── Reminders: clear the entire week ──────────────────────────
+            elif intent == "reminder_clear":
+                rm = self.reminder_manager
+                rm.reminder_list = rm._blank()
+                rm._save()
+                self.update_today_reminder_summary()
+                handled = True
         # ---------- UX feedback --------------------------------------------
         if not handled:
             self.root.ids.request_input.hint_text = (
