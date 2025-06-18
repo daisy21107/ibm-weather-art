@@ -43,14 +43,18 @@ model = _make_model()  # global, reused by every call
 
 # ─── public helper ----------------------------------------------------------
 def get_response(prompt: str) -> str:
-    """
-    Send `prompt` to watsonx.ai and return the first non-blank line of the
-    reply.  On failure, return a short apology string.
-    """
     try:
-        lines = model.generate_text(prompt=prompt).split("\n")
-        cleaned = [ln for ln in lines if ln.strip()]
-        return cleaned[0] if cleaned else ""
-    except Exception as exc:
-        print(f"[chatbot_helper] Error contacting watsonx.ai: {exc}")
-        return "Sorry, I couldn't get a response from the AI service right now."
+        response = model.generate_text(
+            prompt=prompt
+        )
+        response = response.split("\n")    
+        # if the model only helps complete the prompt (not start with capital letter), 
+        # then we need to include the next line
+        if not response[0][0].isupper():
+            return response[2]
+        else:
+            return response[0]
+    
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return "An error occurred while generating the response."

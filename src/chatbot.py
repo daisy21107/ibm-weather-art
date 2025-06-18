@@ -47,7 +47,7 @@ def get_response(prompt: str) -> str:
         # if the model only helps complete the prompt (not start with capital letter), 
         # then we need to include the next line
         if not response[0][0].isupper():
-            return response[1]
+            return response[2]
         else:
             return response[0]
     
