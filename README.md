@@ -133,5 +133,11 @@ git pull
 | USB speaker silent / sample-rate error | TTS returned 22 kHz WAV | App auto-resamples; if you still see `Invalid sample rate`, reboot the Pi (rare ALSA quirk). |
 
 ---
+## 🔗 Project Website & Video Demos
+
+For updates, demo videos, and project documentation, visit:  
+🌐 **[WeatherArt Official Site](https://jungwon0518.wixsite.com/ibm-weather-art)**
+
+---
 
 Happy hacking — pull requests welcome! 🚀
