@@ -520,8 +520,49 @@ class AIWeatherApp(App):
         
         self.root.ids.request_input.text = ""
 
+    def _show_chatbot_popup(self, reply_text):
+        label = Label(
+            text=reply_text,
+            font_name="UI",
+            font_size="18sp",
+            halign="left",
+            valign="top",
+            text_size=(dp(400), None),
+            size_hint_y=None
+        )
+        popup = Popup(
+            title="AI Response",
+            content=label,
+            size_hint=(0.9, 0.6),
+            auto_dismiss=True
+        )
+
+        # Store reference to popup so we can close or track it
+        self._chatbot_popup = popup
+
+        # Bind close action to stop speaking
+        popup.bind(on_dismiss=lambda *_: self._stop_chatbot_speech())
+
+        popup.open()
+        
+    def _stop_chatbot_speech(self):
+        self._is_speaking = False
+        if self._speak_stream:
+            try:
+                self._speak_stream.stop_stream()
+                self._speak_stream.close()
+            except Exception:
+                pass
+            self._speak_stream = None
+        self.root.ids.chatbot_output.font_name = "UI"
+        self.root.ids.chatbot_output.text = "Ask AI"
+
     def _speak_chatbot_response(self, reply):
         chatlog.info("Reply  : %s", reply)
+
+        # Show popup immediately
+        Clock.schedule_once(lambda *_: self._show_chatbot_popup(reply))    
+    
         out = Path(tempfile.gettempdir()) / f"chatbot_{uuid.uuid4().hex}.wav"
         
         try:
@@ -563,7 +604,10 @@ class AIWeatherApp(App):
                 self._is_speaking = False
                 self.root.ids.chatbot_output.font_name = "UI"
                 self.root.ids.chatbot_output.text = "Ask AI"
-
+                
+                if getattr(self, "_chatbot_popup", None):
+                    Clock.schedule_once(lambda *_: self._chatbot_popup.dismiss())
+                    self._chatbot_popup = None
 
             threading.Thread(target=play, daemon=True).start()
 
