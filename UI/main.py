@@ -422,7 +422,7 @@ class AIWeatherApp(App):
         self.root.ids.weather_icon.text = icon
         self.root.ids.weather_label.text = line
 
-    # ─── News ──────────────────────────────────────────────────────────────────
+# ─── News ──────────────────────────────────────────────────────────────────
     def refresh_news(self, *_):
         if self._news_buffer:
             art = self._news_buffer.popleft()
@@ -487,131 +487,152 @@ class AIWeatherApp(App):
     def open_article(self, instance, url):
         webbrowser.open(url)
 
- # ── Chatbot ───────────────────────────────────────────
+
+
+    # ── Chatbot ───────────────────────────────────────────────────────────
 
     def ask_chatbot(self):
         query = self.root.ids.request_input.text.strip()
         if not query:
             return
 
-        self.root.ids.chatbot_output.text = "Thinking"
-        EXECUTOR.submit(lambda: get_response(query))\
-                .add_done_callback(lambda fut: Clock.schedule_once(
-                    lambda *_: setattr(self.root.ids.chatbot_output, "text", fut.result())))
+        self.root.ids.chatbot_output.text = "Thinking…"
+
+        EXECUTOR.submit(lambda: get_response(query)).add_done_callback(
+            lambda fut: Clock.schedule_once(
+                lambda *_: (
+                    setattr(self.root.ids.chatbot_output, "text", fut.result()),
+                    self._show_chatbot_popup(fut.result())           # still immediate
+                )
+            )
+        )
+
 
     def ask_ai_and_speak(self):
+        # tap again to stop
         if self._is_speaking:
-            if self._speak_stream:
-                self._is_speaking = False
+            self._stop_chatbot_speech()
             return
 
-        user_input = self.root.ids.request_input.text.strip()
-        if not user_input:
+        prompt_raw = self.root.ids.request_input.text.strip()
+        if not prompt_raw:
             return
-        chatlog.info("Prompt : %s", user_input)
-        prompt = f"Reply in one paragraph. {user_input}"
-        self.root.ids.chatbot_output.text = "Thinking"
 
-        def task():
-            reply = get_response(prompt)
-            self._speak_chatbot_response(reply)
+        chatlog.info("Prompt : %s", prompt_raw)
 
-        EXECUTOR.submit(task)
-        
+        prompt = f"Reply in one paragraph. {prompt_raw}"
+        self.root.ids.chatbot_output.text = "Thinking…"
         self.root.ids.request_input.text = ""
 
+        def worker():
+            """Runs in the pool: get reply → build WAV → schedule playback."""
+            reply = get_response(prompt)
+
+            wav_path = Path(tempfile.gettempdir()) / f"chatbot_{uuid.uuid4().hex}.wav"
+            try:
+                text_to_speech_ibm(reply, str(wav_path))   # may take a few seconds
+            except Exception:
+                logger.exception("TTS failed")
+                Clock.schedule_once(
+                    lambda *_: setattr(self.root.ids.chatbot_output, "text", "TTS error")
+                )
+                return
+
+            # Playback (and popup) must run on the UI thread
+            Clock.schedule_once(lambda *_: self._begin_audio_playback(reply, wav_path))
+
+        EXECUTOR.submit(worker)
+
+
+    def _begin_audio_playback(self, reply_text, wav_path: Path):
+        self._show_chatbot_popup(reply_text)     # appears *now*, when playback starts
+        self._is_speaking = True
+        self.root.ids.chatbot_output.font_name = "FA"
+        self.root.ids.chatbot_output.text = u"\uf04c"      # pause icon
+        threading.Thread(
+            target=self._play_audio, args=(wav_path,), daemon=True
+        ).start()
+
     def _show_chatbot_popup(self, reply_text):
+        # close previous popup (if user asked again quickly)
+        if getattr(self, "_chatbot_popup", None):
+            self._chatbot_popup.dismiss()
+
         label = Label(
             text=reply_text,
             font_name="UI",
             font_size="18sp",
             halign="left",
             valign="top",
-            text_size=(dp(400), None),
-            size_hint_y=None
+            size_hint=(1, None),
         )
+        # dynamic wrapping
+        label.bind(
+            width=lambda l, w: setattr(l, "text_size", (w, None)),
+            texture_size=lambda l, s: setattr(l, "height", s[1]),
+        )
+
+        scroll = ScrollView(do_scroll_x=False)
+        scroll.add_widget(label)
+
         popup = Popup(
             title="AI Response",
-            content=label,
-            size_hint=(0.9, 0.6),
-            auto_dismiss=True
+            content=scroll,
+            size_hint=(0.9, 0.6),      # 90 % width × 60 % height
+            auto_dismiss=True,         # user can tap outside to close
         )
+        popup.bind(on_dismiss=self._on_popup_closed)
 
-        # Store reference to popup so we can close or track it
         self._chatbot_popup = popup
-
-        # Bind close action to stop speaking
-        popup.bind(on_dismiss=lambda *_: self._stop_chatbot_speech())
-
         popup.open()
-        
+
+    def _on_popup_closed(self, *_):
+        self._chatbot_popup = None
+        Clock.schedule_once(lambda *_: self._stop_chatbot_speech())  # stop safely
+
+
     def _stop_chatbot_speech(self):
-        self._is_speaking = False
-        if self._speak_stream:
-            try:
-                self._speak_stream.stop_stream()
-                self._speak_stream.close()
-            except Exception:
-                pass
-            self._speak_stream = None
+        if not self._is_speaking:
+            return
+        self._is_speaking = False                # playback thread will exit
         self.root.ids.chatbot_output.font_name = "UI"
         self.root.ids.chatbot_output.text = "Ask AI"
 
-    def _speak_chatbot_response(self, reply):
-        chatlog.info("Reply  : %s", reply)
 
-        # Show popup immediately
-        Clock.schedule_once(lambda *_: self._show_chatbot_popup(reply))    
-    
-        out = Path(tempfile.gettempdir()) / f"chatbot_{uuid.uuid4().hex}.wav"
-        
+    def _play_audio(self, wav_path: Path):
         try:
-            text_to_speech_ibm(reply, str(out))
-        except Exception as e:
-            logger.exception("TTS failed")
-            Clock.schedule_once(lambda *_: setattr(self.root.ids.chatbot_output, "text", "TTS error"))
-            return
-
-        def update_ui(*_):
-
-            if self._is_speaking and self._speak_stream is not None:
-                self._speak_stream.stop_stream()
-                self._speak_stream.close()
-                self._speak_stream = None
-                self._is_speaking = False
-                return
-
-            wf = wave.open(str(out), 'rb')
+            wf = wave.open(str(wav_path), "rb")
             pa = pyaudio.PyAudio()
-            self._speak_stream = pa.open(format=pa.get_format_from_width(wf.getsampwidth()),
-                                        channels=wf.getnchannels(),
-                                        rate=wf.getframerate(),
-                                        output=True)
+            stream = pa.open(
+                format  = pa.get_format_from_width(wf.getsampwidth()),
+                channels= wf.getnchannels(),
+                rate    = wf.getframerate(),
+                output  = True,
+            )
+            self._speak_stream = stream
 
-            self._is_speaking = True
-            self.root.ids.chatbot_output.font_name = "FA"
-            self.root.ids.chatbot_output.text = u"\uf04c"  # pause icon
-
-            def play():
+            data = wf.readframes(1024)
+            while data and self._is_speaking:
+                stream.write(data)
                 data = wf.readframes(1024)
-                while data and self._is_speaking:
-                    self._speak_stream.write(data)
-                    data = wf.readframes(1024)
+        finally:
+            # Always clean up
+            if self._speak_stream:
                 self._speak_stream.stop_stream()
                 self._speak_stream.close()
                 self._speak_stream = None
+            try:
                 pa.terminate()
-                self._is_speaking = False
-                self.root.ids.chatbot_output.font_name = "UI"
-                self.root.ids.chatbot_output.text = "Ask AI"
-                
-                if getattr(self, "_chatbot_popup", None):
-                    Clock.schedule_once(lambda *_: self._chatbot_popup.dismiss())
-                    self._chatbot_popup = None
+            except Exception:
+                pass
 
-            threading.Thread(target=play, daemon=True).start()
-
-        Clock.schedule_once(update_ui)
+            self._is_speaking = False
+            Clock.schedule_once(
+                lambda *_: (
+                    setattr(self.root.ids.chatbot_output, "font_name", "UI"),
+                    setattr(self.root.ids.chatbot_output, "text", "Ask AI")
+                )
+            )
 
 
  # ── Speech capture ───────────────────────────────────────────
