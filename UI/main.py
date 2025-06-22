@@ -240,25 +240,34 @@ def _install_global_unicode_font() -> None:
 _register_emoji_font()
 _install_global_unicode_font()
 
+# ──────────────────────────────────────────────────────────────────────────────
+# ReminderManager  —  resets once per ISO-week instead of every Monday launch
+# ──────────────────────────────────────────────────────────────────────────────
+
 class ReminderManager:
-    """Weekly reminder grid that survives reboots."""
+    """Weekly reminder grid that survives restarts and resets only when the
+    ISO week number changes (i.e. once per calendar week)."""
+
     SAVE_PATH = Path.home() / ".aiweather_reminders.json"
+    from __main__ import MAX_REMINDERS_PER_SLOT
 
     def __init__(self):
-        monday_reset = datetime.today().weekday() == 0
-        saved = None if monday_reset else self._load()
-        self.reminder_list = saved or self._blank()
+        data, week_saved = self._load_with_week()
+        this_week = datetime.utcnow().isocalendar()[1]
 
-        # If we wiped the week, save the fresh blank grid immediately
-        if monday_reset:
+        # first run this week (or file missing/corrupt) → blank grid
+        if data is None or week_saved != this_week:
+            self.reminder_list = self._blank()
             self._save()
+        else:
+            self.reminder_list = data
 
-    # ── public API ─────────────────────────────────────────────────────
+    # ── public API ─────────────────────────────────────────────────────────
     def add_one_time(self, day, period, text):
         slot = self.reminder_list[day][period]
-        if text in slot:                       # no duplicates
+        if text in slot:
             return
-        for i in range(MAX_REMINDERS_PER_SLOT):
+        for i in range(self.MAX_REMINDERS_PER_SLOT):
             if slot[i] is None:
                 slot[i] = text
                 self._save()
@@ -273,7 +282,9 @@ class ReminderManager:
         try:
             idx = slot.index(text)
             slot[idx] = None
-            slot[:] = [r for r in slot if r] + [None] * (MAX_REMINDERS_PER_SLOT - len([r for r in slot if r]))
+            # compact slot
+            slot[:] = [r for r in slot if r] + \
+                      [None] * (self.MAX_REMINDERS_PER_SLOT - len([r for r in slot if r]))
             self._save()
         except ValueError:
             pass
@@ -281,30 +292,38 @@ class ReminderManager:
     def get_all(self):
         return self.reminder_list
 
-    # ── internal helpers ───────────────────────────────────────────────
-    def _blank(self):
+    # ── helpers ───────────────────────────────────────────────────────────
+    @staticmethod
+    def _blank():
         return {
-            d: {p: [None] * MAX_REMINDERS_PER_SLOT
+            d: {p: [None] * ReminderManager.MAX_REMINDERS_PER_SLOT
                 for p in ("Morning", "Afternoon", "Evening")}
             for d in ("Monday", "Tuesday", "Wednesday",
                       "Thursday", "Friday", "Saturday", "Sunday")
         }
 
-    def _load(self):
-        if self.SAVE_PATH.exists():
-            try:
-                with self.SAVE_PATH.open(encoding="utf-8") as fh:
-                    return json.load(fh)
-            except Exception:
-                logging.exception("Failed to load reminders; starting fresh")
-        return None
-
+    # ---- persistence with week stamp ------------------------------------
     def _save(self):
+        payload = {
+            "week": datetime.utcnow().isocalendar()[1],
+            "data": self.reminder_list,
+        }
         try:
             with self.SAVE_PATH.open("w", encoding="utf-8") as fh:
-                json.dump(self.reminder_list, fh, ensure_ascii=False, indent=2)
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
         except Exception:
             logging.exception("Failed to save reminders")
+
+    def _load_with_week(self):
+        if not self.SAVE_PATH.exists():
+            return None, None
+        try:
+            with self.SAVE_PATH.open(encoding="utf-8") as fh:
+                payload = json.load(fh)
+            return payload.get("data"), payload.get("week")
+        except Exception:
+            logging.exception("Failed to load reminders; starting fresh")
+            return None, None
 
 
 class GuardianNewsAPI:
@@ -487,8 +506,6 @@ class AIWeatherApp(App):
     def open_article(self, instance, url):
         webbrowser.open(url)
 
-
-
     # ── Chatbot ───────────────────────────────────────────────────────────
 
     def ask_chatbot(self):
@@ -633,7 +650,6 @@ class AIWeatherApp(App):
                     setattr(self.root.ids.chatbot_output, "text", "Ask AI")
                 )
             )
-
 
  # ── Speech capture ───────────────────────────────────────────
     def start_record(self):
@@ -893,7 +909,6 @@ class AIWeatherApp(App):
         self.root.ids.request_input.text = ""
         self.root.ids.request_input.focus = False
 
-
     # ─── YouTube music ─────────────────────────────────────────────────────────
     def _init_player(self):
         if vlc is None:
@@ -1104,9 +1119,6 @@ class AIWeatherApp(App):
         scroll.add_widget(grid)
         popup.content = scroll
         popup.open()
-
-        # ─── Add / edit reminder dialog ─────────────────────────────────────────
-    from kivy.uix.boxlayout import BoxLayout   # already imported, listed for clarity
 
     # ─── Add / edit reminder dialog ─────────────────────────────────────────
     def open_add_reminder_popup(self):
